@@ -132,6 +132,251 @@ def alignment_metrics(delta_flat, importance_flat, *, top_percent: float = 5.0):
     }
 
 
+def importance_rank_bin_weights(importance_flat, *, cutoff_percent: int, family: str):
+    import numpy as np
+
+    a = np.asarray(importance_flat, dtype="float64").reshape(-1)
+    cutoff_percent = int(cutoff_percent)
+    if cutoff_percent <= 0 or cutoff_percent > 100:
+        raise ValueError("cutoff_percent must be in 1..100")
+    cutoff_bins = cutoff_percent
+    n = int(a.size)
+    weights = np.zeros(n, dtype="float64")
+    if n == 0:
+        return weights
+
+    included_k = n if cutoff_percent == 100 else max(1, int(round(float(cutoff_percent) / 100.0 * n)))
+    included_k = min(included_k, n)
+    rank_order = np.argsort(-np.abs(a), kind="stable")
+    bin_ids = np.floor(np.arange(included_k, dtype="float64") * cutoff_bins / included_k).astype(int)
+    bin_ids = np.clip(bin_ids, 0, cutoff_bins - 1)
+
+    if family == "linear":
+        if cutoff_bins == 1:
+            bin_weights = np.ones(1, dtype="float64")
+        else:
+            bin_weights = np.linspace(1.0, 1.0 / cutoff_bins, cutoff_bins, dtype="float64")
+    elif family == "reciprocal":
+        bin_weights = 1.0 / (np.arange(cutoff_bins, dtype="float64") + 1.0)
+    elif family == "exp":
+        half_life = cutoff_bins / 5.0
+        bin_weights = np.power(0.5, np.arange(cutoff_bins, dtype="float64") / half_life)
+    else:
+        raise ValueError(f"Unknown weight family: {family!r}")
+
+    weights[rank_order[:included_k]] = bin_weights[bin_ids]
+    return weights
+
+
+def segmentig_soft_alignment_metrics(delta_flat, importance_flat):
+    import numpy as np
+
+    d = np.asarray(delta_flat, dtype="float64").reshape(-1)
+    a = np.asarray(importance_flat, dtype="float64").reshape(-1)
+    n = min(d.size, a.size)
+    d, a = d[:n], a[:n]
+    if n == 0:
+        metrics = {
+            "delta_importance_product_signed": float("nan"),
+            "delta_importance_product_unsigned": float("nan"),
+        }
+        for cutoff in (100, 50, 25, 10):
+            for family in ("linear", "reciprocal", "exp"):
+                metrics[f"delta_energy_importance_bins_top{cutoff}_{family}"] = float("nan")
+        return metrics
+    d_abs = np.abs(d)
+    denom = float(d_abs.sum() + 1e-12)
+    a_norm = a / float(np.max(np.abs(a)) + 1e-12)
+
+    metrics = {
+        "delta_importance_product_signed": float(np.sum((-a_norm) * d) / denom),
+        "delta_importance_product_unsigned": float(np.sum(np.abs(a_norm) * d_abs) / denom),
+    }
+    for cutoff in (100, 50, 25, 10):
+        for family in ("linear", "reciprocal", "exp"):
+            weights = importance_rank_bin_weights(a, cutoff_percent=cutoff, family=family)
+            metrics[f"delta_energy_importance_bins_top{cutoff}_{family}"] = float(np.sum(weights * d_abs) / denom)
+    return metrics
+
+
+def importance_rank_bin_energy_fractions(delta_flat, importance_flat, *, n_bins: int = 100):
+    import numpy as np
+
+    d = np.asarray(delta_flat, dtype="float64").reshape(-1)
+    a = np.asarray(importance_flat, dtype="float64").reshape(-1)
+    n = min(d.size, a.size)
+    d, a = np.abs(d[:n]), a[:n]
+    n_bins = int(n_bins)
+    if n_bins <= 0:
+        raise ValueError("n_bins must be positive")
+    if n == 0:
+        return np.full(n_bins, np.nan, dtype="float64")
+
+    rank_order = np.argsort(-np.abs(a), kind="stable")
+    ranked_delta = d[rank_order]
+    bin_ids = np.floor(np.arange(n, dtype="float64") * n_bins / n).astype(int)
+    bin_ids = np.clip(bin_ids, 0, n_bins - 1)
+    fractions = np.bincount(bin_ids, weights=ranked_delta, minlength=n_bins).astype("float64")
+    return fractions / float(d.sum() + 1e-12)
+
+
+def _as_numpy(values):
+    import numpy as np
+
+    if hasattr(values, "detach"):
+        values = values.detach().cpu().numpy()
+    return np.asarray(values, dtype="float64")
+
+
+def _safe_entropy(values):
+    import numpy as np
+
+    arr = np.asarray(values, dtype="float64").reshape(-1)
+    arr = np.clip(arr, 0.0, None)
+    total = float(arr.sum())
+    if total <= 0:
+        return float("nan")
+    p = arr / total
+    p = p[p > 0]
+    return float(-(p * np.log(p)).sum() / np.log(max(2, arr.size)))
+
+
+def _center_of_mass(values_2d):
+    import numpy as np
+
+    arr = np.asarray(values_2d, dtype="float64")
+    total = float(arr.sum())
+    if total <= 0:
+        return (float("nan"), float("nan"))
+    yy, xx = np.indices(arr.shape)
+    return (float((yy * arr).sum() / total), float((xx * arr).sum() / total))
+
+
+def _top_set(values, k: int):
+    import numpy as np
+
+    arr = np.asarray(values, dtype="float64").reshape(-1)
+    k = max(1, min(int(k), arr.size))
+    idx = np.argpartition(-arr, kth=k - 1)[:k]
+    return set(int(i) for i in idx)
+
+
+def handcrafted_delta_importance_features(
+    delta_chw,
+    importance_chw,
+    *,
+    patch_bbox_xyxy=None,
+    imgsz: int | None = None,
+    rank_bins: int = 100,
+):
+    import numpy as np
+
+    d_chw = _as_numpy(delta_chw)
+    a_chw = _as_numpy(importance_chw)
+    if d_chw.ndim == 4:
+        d_chw = d_chw[0]
+    if a_chw.ndim == 4:
+        a_chw = a_chw[0]
+    if d_chw.ndim != 3 or a_chw.ndim != 3:
+        raise ValueError(f"Expected [C,H,W] arrays, got delta={d_chw.shape}, importance={a_chw.shape}")
+    c = min(d_chw.shape[0], a_chw.shape[0])
+    h = min(d_chw.shape[1], a_chw.shape[1])
+    w = min(d_chw.shape[2], a_chw.shape[2])
+    d_chw = d_chw[:c, :h, :w]
+    a_chw = a_chw[:c, :h, :w]
+
+    d = d_chw.reshape(-1)
+    a = a_chw.reshape(-1)
+    d_abs = np.abs(d)
+    a_abs = np.abs(a)
+    d_sum = float(d_abs.sum() + 1e-12)
+    a_sum = float(a_abs.sum() + 1e-12)
+    n = d_abs.size
+    out: dict[str, float] = {}
+
+    rank_fracs = importance_rank_bin_energy_fractions(d_abs, a_abs, n_bins=int(rank_bins))
+    prefix = "hand_rank"
+    for k in (1, 2, 3, 5, 6, 10, 25):
+        out[f"{prefix}_top{k}_delta_frac"] = float(rank_fracs[:k].sum())
+    out[f"{prefix}_ratio_top1_top5"] = float(rank_fracs[:1].sum() / (rank_fracs[:5].sum() + 1e-12))
+    out[f"{prefix}_ratio_top3_top10"] = float(rank_fracs[:3].sum() / (rank_fracs[:10].sum() + 1e-12))
+    out[f"{prefix}_ratio_top5_top25"] = float(rank_fracs[:5].sum() / (rank_fracs[:25].sum() + 1e-12))
+    out[f"{prefix}_entropy"] = _safe_entropy(rank_fracs)
+    out[f"{prefix}_peak_bin"] = float(int(np.nanargmax(rank_fracs)) + 1 if np.isfinite(rank_fracs).any() else np.nan)
+
+    denom = float(np.linalg.norm(d_abs) * np.linalg.norm(a_abs) + 1e-12)
+    out["hand_flat_abs_cosine"] = float(np.dot(d_abs, a_abs) / denom)
+    for pct in (1, 3, 5, 10, 25):
+        k = max(1, int(round(float(pct) / 100.0 * n)))
+        a_top = _top_set(a_abs, k)
+        d_top = _top_set(d_abs, k)
+        union = len(a_top | d_top)
+        out[f"hand_overlap_top{pct}_jaccard"] = float(len(a_top & d_top) / max(1, union))
+        out[f"hand_overlap_top{pct}_delta_in_topA"] = float(d_abs[list(a_top)].sum() / d_sum)
+        out[f"hand_overlap_top{pct}_importance_in_topDelta"] = float(a_abs[list(d_top)].sum() / a_sum)
+
+    a_norm = a / float(np.max(a_abs) + 1e-12)
+    signed = -a_norm * d
+    unsigned = np.abs(a_norm) * d_abs
+    correct = signed > 0
+    correct_mass = float(unsigned[correct].sum())
+    wrong_mass = float(unsigned[~correct].sum())
+    total_mass = correct_mass + wrong_mass + 1e-12
+    out["hand_signed_correct_mass_ratio"] = float(correct_mass / total_mass)
+    out["hand_signed_correct_minus_wrong"] = float((correct_mass - wrong_mass) / total_mass)
+    out["hand_signed_sum_norm_delta"] = float(signed.sum() / d_sum)
+    pos = a > 0
+    neg = a < 0
+    out["hand_signed_pos_down_mass"] = float(unsigned[pos & (d < 0)].sum() / (unsigned[pos].sum() + 1e-12)) if np.any(pos) else float("nan")
+    out["hand_signed_neg_up_mass"] = float(unsigned[neg & (d > 0)].sum() / (unsigned[neg].sum() + 1e-12)) if np.any(neg) else float("nan")
+
+    d_sp = np.sqrt(np.mean(d_chw * d_chw, axis=0).clip(min=0.0))
+    a_sp = np.sqrt(np.mean(a_chw * a_chw, axis=0).clip(min=0.0))
+    sp_d = d_sp.reshape(-1)
+    sp_a = a_sp.reshape(-1)
+    sp_d_sum = float(sp_d.sum() + 1e-12)
+    sp_a_sum = float(sp_a.sum() + 1e-12)
+    out["hand_spatial_cosine"] = float(np.dot(sp_d, sp_a) / (np.linalg.norm(sp_d) * np.linalg.norm(sp_a) + 1e-12))
+    out["hand_spatial_delta_entropy"] = _safe_entropy(sp_d)
+    out["hand_spatial_importance_entropy"] = _safe_entropy(sp_a)
+    cy_d, cx_d = _center_of_mass(d_sp)
+    cy_a, cx_a = _center_of_mass(a_sp)
+    out["hand_spatial_center_distance"] = float(np.sqrt((cy_d - cy_a) ** 2 + (cx_d - cx_a) ** 2) / max(1.0, np.sqrt(h * h + w * w)))
+    for pct in (5, 10, 25):
+        k_sp = max(1, int(round(float(pct) / 100.0 * sp_d.size)))
+        a_top = _top_set(sp_a, k_sp)
+        d_top = _top_set(sp_d, k_sp)
+        out[f"hand_spatial_top{pct}_jaccard"] = float(len(a_top & d_top) / max(1, len(a_top | d_top)))
+        out[f"hand_spatial_top{pct}_delta_in_topA"] = float(sp_d[list(a_top)].sum() / sp_d_sum)
+    if patch_bbox_xyxy is not None and imgsz is not None:
+        x1, y1, x2, y2 = [float(v) for v in patch_bbox_xyxy]
+        gx1 = max(0, min(w, int(np.floor(x1 / float(imgsz) * w))))
+        gx2 = max(0, min(w, int(np.ceil(x2 / float(imgsz) * w))))
+        gy1 = max(0, min(h, int(np.floor(y1 / float(imgsz) * h))))
+        gy2 = max(0, min(h, int(np.ceil(y2 / float(imgsz) * h))))
+        mask = np.zeros((h, w), dtype=bool)
+        if gx2 > gx1 and gy2 > gy1:
+            mask[gy1:gy2, gx1:gx2] = True
+        roi_energy = float(d_sp[mask].sum()) if mask.any() else 0.0
+        out["hand_spatial_roi_delta_frac"] = float(roi_energy / sp_d_sum)
+        out["hand_spatial_outside_roi_delta_frac"] = float(1.0 - roi_energy / sp_d_sum)
+
+    d_ch = d_abs.reshape(c, h * w).sum(axis=1)
+    a_ch = a_abs.reshape(c, h * w).sum(axis=1)
+    ch_d_sum = float(d_ch.sum() + 1e-12)
+    out["hand_channel_cosine"] = float(np.dot(d_ch, a_ch) / (np.linalg.norm(d_ch) * np.linalg.norm(a_ch) + 1e-12))
+    out["hand_channel_delta_entropy"] = _safe_entropy(d_ch)
+    out["hand_channel_importance_entropy"] = _safe_entropy(a_ch)
+    out["hand_channel_max_delta_frac"] = float(np.max(d_ch) / ch_d_sum)
+    for pct in (5, 10, 25):
+        k_ch = max(1, int(round(float(pct) / 100.0 * c)))
+        a_top = _top_set(a_ch, k_ch)
+        d_top = _top_set(d_ch, k_ch)
+        out[f"hand_channel_top{pct}_jaccard"] = float(len(a_top & d_top) / max(1, len(a_top | d_top)))
+        out[f"hand_channel_top{pct}_delta_in_topA"] = float(d_ch[list(a_top)].sum() / ch_d_sum)
+    return out
+
+
 def metric_quality_rows(labels, metrics_by_name: dict[str, object]):
     rows = []
     for name, values in metrics_by_name.items():

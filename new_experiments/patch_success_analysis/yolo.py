@@ -83,6 +83,46 @@ def yolo_predict_conf_scalar(
     return float(confs[mask].max(initial=0.0)), result
 
 
+def confidence_from_result(result, *, target_class_id: int | None) -> float:
+    import numpy as np
+
+    if result.boxes is None or len(result.boxes) == 0:
+        return 0.0
+    confs = result.boxes.conf.detach().cpu().numpy()
+    clss = result.boxes.cls.detach().cpu().numpy().astype(int)
+    if target_class_id is None:
+        return float(confs.max(initial=0.0))
+    mask = clss == int(target_class_id)
+    if not np.any(mask):
+        return 0.0
+    return float(confs[mask].max(initial=0.0))
+
+
+def yolo_predict_conf_batch(
+    yolo_model,
+    pil_imgs,
+    *,
+    imgsz: int,
+    target_class_id: int | None,
+    conf: float = 0.001,
+    device: str | None = None,
+    batch_size: int = 16,
+):
+    images = list(pil_imgs)
+    if not images:
+        return [], []
+    results = yolo_model.predict(
+        source=[pil_to_np_bgr(img) for img in images],
+        imgsz=int(imgsz),
+        conf=float(conf),
+        device=device,
+        batch=max(1, int(batch_size)),
+        verbose=False,
+    )
+    confs = [confidence_from_result(result, target_class_id=target_class_id) for result in results]
+    return confs, list(results)
+
+
 def detection_dict_from_result(res, *, target_class_id: int | None) -> dict[str, Any] | None:
     import numpy as np
 

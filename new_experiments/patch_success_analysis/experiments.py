@@ -22,6 +22,7 @@ class ExperimentConfig:
     ranking_top_ns: tuple[int, ...] = (500, 2000, 8000, 50000)
     overlap_percentages: tuple[int, ...] = (1, 5, 10, 20, 50, 100)
     runtime_n_images: int = 100
+    metrics_batch_size: int = 64
 
 
 class PatchSuccessExperiment:
@@ -68,6 +69,21 @@ class PatchSuccessExperiment:
                 self.model.to(self.config.attack.device)
             self.model.eval()
         return self.yolo, self.model
+
+    @staticmethod
+    def _release_batch_memory() -> None:
+        import gc
+
+        gc.collect()
+        try:
+            import torch
+
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                torch.mps.empty_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def representative_layers(self, *, include_target: bool = True, max_layers: int = 8) -> list[str]:
         _yolo, model = self.load_model()
@@ -186,6 +202,170 @@ class PatchSuccessExperiment:
         }
         key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
         return self.derived_cache_dir / f"attribution_comparison_{key}.pkl"
+
+    def _success_failure_metrics_cache_path(self, selected: list[AttackExample], *, layer_name: str, top_percent: float) -> Path:
+        payload = {
+            "attack_cache_key": self.get_cache().cache_key,
+            "paths": [item.path for item in selected],
+            "target_layer": layer_name,
+            "detect_layer": self.config.detect_layer,
+            "target_mode": self.config.target_mode,
+            "n_steps": int(self.config.n_steps),
+            "alpha_batch_size": int(self.config.alpha_batch_size),
+            "top_percent": float(top_percent),
+            "method_version": 6,
+        }
+        key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
+        return self.derived_cache_dir / f"success_failure_metrics_{key}.pkl"
+
+    def _segmentig_success_failure_metrics_cache_path(
+        self,
+        selected: list[AttackExample],
+        *,
+        layer_name: str,
+        top_percent: float,
+    ) -> Path:
+        payload = {
+            "attack_cache_key": self.get_cache().cache_key,
+            "paths": [item.path for item in selected],
+            "target_layer": layer_name,
+            "detect_layer": self.config.detect_layer,
+            "target_mode": self.config.target_mode,
+            "n_steps": int(self.config.n_steps),
+            "alpha_batch_size": int(self.config.alpha_batch_size),
+            "top_percent": float(top_percent),
+            "method_version": 1,
+        }
+        key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
+        return self.derived_cache_dir / f"segmentig_success_failure_metrics_{key}.pkl"
+
+    def _layer_map_cache_path(self, example: AttackExample, *, layer_name: str) -> Path:
+        payload = {
+            "attack_cache_key": self.get_cache().cache_key,
+            "path": example.path,
+            "drop": float(example.drop),
+            "success": bool(example.success),
+            "target_layer": layer_name,
+            "detect_layer": self.config.detect_layer,
+            "target_mode": self.config.target_mode,
+            "n_steps": int(self.config.n_steps),
+            "alpha_batch_size": int(self.config.alpha_batch_size),
+            "imgsz": int(self.config.attack.imgsz),
+            "method_version": 1,
+        }
+        key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
+        out = self.derived_cache_dir / "layer_maps"
+        out.mkdir(parents=True, exist_ok=True)
+        return out / f"layer_maps_{key}.npz"
+
+    def _load_layer_map_cache(self, example: AttackExample, *, layer_name: str, include_clean_activation: bool = True):
+        import numpy as np
+
+        cache_path = self._layer_map_cache_path(example, layer_name=layer_name)
+        if not cache_path.exists():
+            return None
+        with np.load(cache_path, allow_pickle=False) as data:
+            required = {"delta_chw", "segmentig_chw", "activation_shape"}
+            if include_clean_activation:
+                required.add("clean_activation_chw")
+            if not required.issubset(set(data.files)):
+                return None
+            out = {
+                "delta_chw": data["delta_chw"].astype("float16", copy=False),
+                "segmentig_chw": data["segmentig_chw"].astype("float16", copy=False),
+                "activation_shape": tuple(int(v) for v in data["activation_shape"].tolist()),
+                "cache_path": str(cache_path),
+                "loaded_from_cache": True,
+            }
+            if include_clean_activation:
+                out["clean_activation_chw"] = data["clean_activation_chw"].astype("float16", copy=False)
+            return out
+
+    def _save_layer_map_cache(self, example: AttackExample, *, layer_name: str, maps: dict[str, Any]):
+        import numpy as np
+
+        cache_path = self._layer_map_cache_path(example, layer_name=layer_name)
+        delta_chw = np.asarray(maps["delta_chw"], dtype="float16")
+        segmentig_chw = np.asarray(maps["segmentig_chw"], dtype="float16")
+        clean_activation_chw = np.asarray(maps["clean_activation_chw"], dtype="float16")
+        np.savez_compressed(
+            cache_path,
+            delta_chw=delta_chw,
+            segmentig_chw=segmentig_chw,
+            clean_activation_chw=clean_activation_chw,
+            activation_shape=np.asarray(maps["activation_shape"], dtype="int64"),
+        )
+        maps = dict(maps)
+        maps["delta_chw"] = delta_chw
+        maps["segmentig_chw"] = segmentig_chw
+        maps["clean_activation_chw"] = clean_activation_chw
+        maps["cache_path"] = str(cache_path)
+        maps["loaded_from_cache"] = False
+        return maps
+
+    def _compute_or_load_segmentig_layer_maps(
+        self,
+        example: AttackExample,
+        ctx: dict[str, Any],
+        *,
+        model,
+        layer,
+        layer_name: str,
+        force: bool = False,
+        include_clean_activation: bool = True,
+    ):
+        import numpy as np
+
+        from .activations import capture_activations, compute_layer_deltas
+        from .attributions import compute_layer_ig_attribution
+
+        if not force:
+            cached = self._load_layer_map_cache(
+                example,
+                layer_name=layer_name,
+                include_clean_activation=include_clean_activation,
+            )
+            if cached is not None:
+                return cached
+
+        clean_pack = self._preprocess(ctx["clean_lb"])
+        patched_pack = self._preprocess(ctx["patched_lb"])
+        deltas = compute_layer_deltas(model, clean_pack["im"], patched_pack["im"], [layer_name])
+        if layer_name not in deltas:
+            raise RuntimeError(f"Layer {layer_name!r} was not captured for {example.path}")
+        clean_acts = capture_activations(model, clean_pack["im"], [layer_name])
+        if layer_name not in clean_acts:
+            raise RuntimeError(f"Clean activation for layer {layer_name!r} was not captured for {example.path}")
+        segmentig = compute_layer_ig_attribution(
+            model,
+            ctx["inputs"],
+            ctx["baselines"],
+            target_fn=ctx["target_fn"],
+            layer=layer,
+            layer_name=layer_name,
+            method="SegmentIG[0;0.1]",
+            n_steps=int(self.config.n_steps),
+            alpha_batch_size=int(self.config.alpha_batch_size),
+            segment_start=0.0,
+            segment_end=0.1,
+        )
+
+        def chw_array(tensor):
+            arr = tensor.detach().cpu().numpy()
+            if arr.ndim == 4:
+                arr = arr[0]
+            return arr.astype("float32", copy=False)
+
+        maps = {
+            "delta_chw": chw_array(deltas[layer_name].delta),
+            "segmentig_chw": chw_array(segmentig.chw()),
+            "clean_activation_chw": chw_array(clean_acts[layer_name]),
+            "activation_shape": np.asarray(segmentig.activation_shape, dtype="int64"),
+        }
+        saved = self._save_layer_map_cache(example, layer_name=layer_name, maps=maps)
+        if not include_clean_activation:
+            saved.pop("clean_activation_chw", None)
+        return saved
 
     def _plot_attribution_comparison(self, result: dict[str, Any]) -> dict[str, Any]:
         from .plots import plot_overlap, plot_ranked_attributions, plot_runtime
@@ -432,12 +612,19 @@ class PatchSuccessExperiment:
         layer_name: str | None = None,
         max_examples: int | None = None,
         top_percent: float = 5.0,
+        force: bool = False,
     ):
         import matplotlib.pyplot as plt
 
-        from .activations import compute_layer_deltas, delta_spread_metrics
+        from .activations import delta_spread_metrics
         from .attributions import compute_layer_ig_attribution, compute_naa_attribution, mean_ia_gradient
-        from .metrics import alignment_metrics, metric_quality_rows
+        from .metrics import (
+            alignment_metrics,
+            handcrafted_delta_importance_features,
+            importance_rank_bin_energy_fractions,
+            metric_quality_rows,
+            segmentig_soft_alignment_metrics,
+        )
         from .plots import plot_metric_distribution_and_roc
         from .yolo import get_module_by_name
 
@@ -446,6 +633,14 @@ class PatchSuccessExperiment:
         if max_examples is not None:
             selected = selected[: int(max_examples)]
         layer_name = layer_name or self.config.target_layer
+        cache_path = self._success_failure_metrics_cache_path(selected, layer_name=layer_name, top_percent=float(top_percent))
+        if cache_path.exists() and not force:
+            with cache_path.open("rb") as f:
+                cached = pickle.load(f)
+            cached["loaded_from_cache"] = True
+            cached["cache_path"] = str(cache_path)
+            return cached
+
         _yolo, model = self.load_model()
         layer = get_module_by_name(model, layer_name)
         contexts = [(example, self._context_for_example(example, image_variant="clean")) for example in selected]
@@ -455,19 +650,27 @@ class PatchSuccessExperiment:
             layer=layer,
         )
         metric_rows = []
-        for example, ctx in contexts:
-            clean_pack = self._preprocess(ctx["clean_lb"])
-            patched_pack = self._preprocess(ctx["patched_lb"])
-            deltas = compute_layer_deltas(model, clean_pack["im"], patched_pack["im"], [layer_name])
-            if layer_name not in deltas:
-                continue
+        metrics_batch_size = max(1, int(getattr(self.config, "metrics_batch_size", 64)))
+        for example_idx, (example, ctx) in enumerate(contexts, start=1):
+            layer_maps = self._compute_or_load_segmentig_layer_maps(
+                example,
+                ctx,
+                model=model,
+                layer=layer,
+                layer_name=layer_name,
+                include_clean_activation=False,
+            )
+            delta_chw = layer_maps["delta_chw"]
+            segmentig_chw = layer_maps["segmentig_chw"]
             row = {
                 "path": example.path,
                 "success": bool(example.success),
                 "conf_clean": example.conf_clean,
                 "conf_patch": example.conf_patch,
                 "drop": example.drop,
-                **delta_spread_metrics(deltas[layer_name].delta, patch_bbox_xyxy=example.patch_bbox_lb, imgsz=int(self.config.attack.imgsz)),
+                "layer_maps_cache_path": layer_maps["cache_path"],
+                "layer_maps_loaded_from_cache": bool(layer_maps["loaded_from_cache"]),
+                **delta_spread_metrics(delta_chw, patch_bbox_xyxy=example.patch_bbox_lb, imgsz=int(self.config.attack.imgsz)),
             }
             attribution_results = {
                 "full_ig": compute_layer_ig_attribution(
@@ -506,24 +709,54 @@ class PatchSuccessExperiment:
                     ia_gradient=ia_gradient,
                 ),
             }
-            delta_flat = deltas[layer_name].delta.detach().cpu().reshape(-1).numpy()
+            delta_flat = delta_chw.reshape(-1)
             for method_key, attribution in attribution_results.items():
+                attribution_flat = attribution.chw().detach().cpu().reshape(-1).numpy()
                 method_metrics = alignment_metrics(
                     delta_flat,
-                    attribution.chw().detach().cpu().reshape(-1).numpy(),
+                    attribution_flat,
                     top_percent=float(top_percent),
                 )
+                if method_key == "segmentig":
+                    method_metrics.update(segmentig_soft_alignment_metrics(delta_flat, attribution_flat))
+                    method_metrics.update(
+                        handcrafted_delta_importance_features(
+                            delta_chw,
+                            segmentig_chw,
+                            patch_bbox_xyxy=example.patch_bbox_lb,
+                            imgsz=int(self.config.attack.imgsz),
+                        )
+                    )
+                    bin_fractions = importance_rank_bin_energy_fractions(delta_flat, segmentig_chw.reshape(-1), n_bins=100)
+                    method_metrics.update(
+                        {
+                            f"delta_energy_importance_binfrac_{idx:03d}": float(value)
+                            for idx, value in enumerate(bin_fractions, start=1)
+                        }
+                    )
                 for metric_name, value in method_metrics.items():
                     row[f"{method_key}_{metric_name}"] = value
             # Backward-compatible aliases for the selected attribution method.
             for metric_name in ("align_cosine", "align_top_jaccard", "importance_energy_in_delta_top", "delta_energy_in_importance_top"):
                 row[metric_name] = row[f"segmentig_{metric_name}"]
             metric_rows.append(row)
+            del row, attribution_results, delta_flat, delta_chw, segmentig_chw, layer_maps
+            if example_idx % metrics_batch_size == 0:
+                self._release_batch_memory()
+        self._release_batch_memory()
         labels = [r["success"] for r in metric_rows]
         metric_names = [
             k
             for k in metric_rows[0].keys()
-            if k.startswith("delta_") or k.endswith("_frac") or k.startswith("align_") or k.endswith("_top")
+            if (
+                k.startswith("delta_")
+                or k.endswith("_frac")
+                or k.startswith("align_")
+                or k.endswith("_top")
+                or k.startswith("segmentig_delta_importance_product_")
+                or k.startswith("segmentig_delta_energy_importance_bins_")
+                or k.startswith("segmentig_hand_")
+            )
         ] if metric_rows else []
         quality = metric_quality_rows(labels, {name: [r[name] for r in metric_rows] for name in metric_names})
         for item in quality:
@@ -540,7 +773,151 @@ class PatchSuccessExperiment:
             )
             plt.close(fig)
             item["figure_path"] = str(path)
-        return {"rows": metric_rows, "quality": quality}
+        result = {"rows": metric_rows, "quality": quality, "cache_path": str(cache_path), "loaded_from_cache": False}
+        with cache_path.open("wb") as f:
+            pickle.dump(result, f)
+        return result
+
+    def run_segmentig_success_failure_metrics(
+        self,
+        *,
+        layer_name: str | None = None,
+        max_examples: int | None = None,
+        top_percent: float = 5.0,
+        force: bool = False,
+    ):
+        import matplotlib.pyplot as plt
+
+        from .activations import delta_spread_metrics
+        from .metrics import (
+            alignment_metrics,
+            handcrafted_delta_importance_features,
+            importance_rank_bin_energy_fractions,
+            metric_quality_rows,
+            segmentig_soft_alignment_metrics,
+        )
+        from .plots import plot_metric_distribution_and_roc
+        from .yolo import get_module_by_name
+
+        cache = self.get_cache()
+        selected = list(cache.examples)
+        if max_examples is not None:
+            selected = selected[: int(max_examples)]
+        layer_name = layer_name or self.config.target_layer
+        cache_path = self._segmentig_success_failure_metrics_cache_path(
+            selected,
+            layer_name=layer_name,
+            top_percent=float(top_percent),
+        )
+        if cache_path.exists() and not force:
+            with cache_path.open("rb") as f:
+                cached = pickle.load(f)
+            cached["loaded_from_cache"] = True
+            cached["cache_path"] = str(cache_path)
+            return cached
+
+        model = None
+        layer = None
+        metric_rows = []
+        metrics_batch_size = max(1, int(getattr(self.config, "metrics_batch_size", 64)))
+        for example_idx, example in enumerate(selected, start=1):
+            layer_maps = self._load_layer_map_cache(
+                example,
+                layer_name=layer_name,
+                include_clean_activation=False,
+            )
+            if layer_maps is None:
+                if model is None or layer is None:
+                    _yolo, model = self.load_model()
+                    layer = get_module_by_name(model, layer_name)
+                ctx = self._context_for_example(example, image_variant="clean")
+                layer_maps = self._compute_or_load_segmentig_layer_maps(
+                    example,
+                    ctx,
+                    model=model,
+                    layer=layer,
+                    layer_name=layer_name,
+                    include_clean_activation=False,
+                )
+            delta_chw = layer_maps["delta_chw"]
+            segmentig_chw = layer_maps["segmentig_chw"]
+            delta_flat = delta_chw.reshape(-1)
+            segmentig_flat = segmentig_chw.reshape(-1)
+
+            method_metrics = alignment_metrics(
+                delta_flat,
+                segmentig_flat,
+                top_percent=float(top_percent),
+            )
+            method_metrics.update(segmentig_soft_alignment_metrics(delta_flat, segmentig_flat))
+            method_metrics.update(
+                handcrafted_delta_importance_features(
+                    delta_chw,
+                    segmentig_chw,
+                    patch_bbox_xyxy=example.patch_bbox_lb,
+                    imgsz=int(self.config.attack.imgsz),
+                )
+            )
+            bin_fractions = importance_rank_bin_energy_fractions(delta_flat, segmentig_flat, n_bins=100)
+            method_metrics.update(
+                {
+                    f"delta_energy_importance_binfrac_{idx:03d}": float(value)
+                    for idx, value in enumerate(bin_fractions, start=1)
+                }
+            )
+
+            row = {
+                "path": example.path,
+                "success": bool(example.success),
+                "conf_clean": example.conf_clean,
+                "conf_patch": example.conf_patch,
+                "drop": example.drop,
+                "layer_maps_cache_path": layer_maps["cache_path"],
+                "layer_maps_loaded_from_cache": bool(layer_maps["loaded_from_cache"]),
+                **delta_spread_metrics(delta_chw, patch_bbox_xyxy=example.patch_bbox_lb, imgsz=int(self.config.attack.imgsz)),
+            }
+            for metric_name, value in method_metrics.items():
+                row[f"segmentig_{metric_name}"] = value
+            metric_rows.append(row)
+            del row, method_metrics, delta_flat, segmentig_flat, delta_chw, segmentig_chw, layer_maps
+            if example_idx % metrics_batch_size == 0:
+                self._release_batch_memory()
+        self._release_batch_memory()
+
+        labels = [r["success"] for r in metric_rows]
+        metric_names = [
+            k
+            for k in metric_rows[0].keys()
+            if (
+                k.startswith("delta_")
+                or k.startswith("segmentig_align_")
+                or k.startswith("segmentig_importance_")
+                or k.startswith("segmentig_delta_energy_in_importance_top")
+                or k.startswith("segmentig_delta_importance_product_")
+                or k.startswith("segmentig_delta_energy_importance_bins_")
+                or k.startswith("segmentig_delta_energy_importance_binfrac_")
+                or k.startswith("segmentig_hand_")
+            )
+        ] if metric_rows else []
+        quality = metric_quality_rows(labels, {name: [r[name] for r in metric_rows] for name in metric_names})
+        for item in quality:
+            name = item["metric"]
+            path = self.figures_dir / f"metric_{name}.png"
+            fig = plot_metric_distribution_and_roc(
+                labels,
+                [r[name] for r in metric_rows],
+                metric_name=name,
+                auc=float(item["roc_auc"]),
+                best_accuracy=float(item["best_accuracy"]),
+                direction=int(item["best_direction"]),
+                save_path=path,
+            )
+            plt.close(fig)
+            item["figure_path"] = str(path)
+        result = {"rows": metric_rows, "quality": quality, "cache_path": str(cache_path), "loaded_from_cache": False}
+        with cache_path.open("wb") as f:
+            pickle.dump(result, f)
+        return result
 
     def run_failure_diagnosis(self, *, layer_name: str | None = None, max_examples: int | None = None, top_percent: float = 5.0):
         import matplotlib.pyplot as plt

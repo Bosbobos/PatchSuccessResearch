@@ -72,9 +72,13 @@ def compute_layer_deltas(model, clean_x, patched_x, layer_names: list[str]) -> d
 
 
 def reduce_chw_to_hw(tensor, *, mode: str = "l2"):
+    import numpy as np
     import torch
 
-    x = tensor.detach()
+    if hasattr(tensor, "detach"):
+        x = tensor.detach()
+    else:
+        x = torch.as_tensor(np.asarray(tensor))
     if x.ndim == 4:
         x = x[0]
     if x.ndim != 3:
