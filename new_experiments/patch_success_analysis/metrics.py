@@ -228,6 +228,66 @@ def _as_numpy(values):
     return np.asarray(values, dtype="float64")
 
 
+def jpeg_zigzag_indices(h: int, w: int):
+    import numpy as np
+
+    h, w = int(h), int(w)
+    if h <= 0 or w <= 0:
+        raise ValueError("h and w must be positive")
+    order: list[int] = []
+    for diag in range(h + w - 1):
+        r_min = max(0, diag - (w - 1))
+        r_max = min(h - 1, diag)
+        rows = range(r_min, r_max + 1)
+        if diag % 2 == 0:
+            rows = reversed(list(rows))
+        for r in rows:
+            c = diag - int(r)
+            if 0 <= c < w:
+                order.append(int(r) * w + int(c))
+    return np.asarray(order, dtype=int)
+
+
+def delta_zigzag_profile(delta_chw, *, mode: str = "mean_abs"):
+    import numpy as np
+
+    arr = _as_numpy(delta_chw)
+    if arr.ndim == 4:
+        arr = arr[0]
+    if arr.ndim != 3:
+        raise ValueError(f"Expected [C,H,W] or [1,C,H,W], got {arr.shape}")
+    if mode == "mean_abs":
+        spatial = np.mean(np.abs(arr), axis=0)
+    elif mode == "signed_mean":
+        spatial = np.mean(arr, axis=0)
+    else:
+        raise ValueError(f"Unsupported zig-zag profile mode: {mode!r}")
+    order = jpeg_zigzag_indices(spatial.shape[0], spatial.shape[1])
+    return spatial.reshape(-1)[order].astype("float64", copy=False)
+
+
+def normalized_cumulative_curve(profile):
+    import numpy as np
+
+    mass = np.abs(np.asarray(profile, dtype="float64").reshape(-1))
+    if mass.size == 0:
+        return np.asarray([], dtype="float64"), np.asarray([], dtype="float64")
+    total = float(mass.sum())
+    x = np.linspace(1.0 / mass.size, 1.0, mass.size, dtype="float64")
+    if total <= 0.0:
+        return x, np.zeros_like(x)
+    return x, np.cumsum(mass) / total
+
+
+def normalized_cumulative_auc(profile):
+    import numpy as np
+
+    x, y = normalized_cumulative_curve(profile)
+    if x.size == 0:
+        return float("nan")
+    return float(np.trapz(y, x))
+
+
 def _safe_entropy(values):
     import numpy as np
 
