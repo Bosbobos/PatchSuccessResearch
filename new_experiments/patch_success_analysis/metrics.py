@@ -196,6 +196,67 @@ def segmentig_soft_alignment_metrics(delta_flat, importance_flat):
         for family in ("linear", "reciprocal", "exp"):
             weights = importance_rank_bin_weights(a, cutoff_percent=cutoff, family=family)
             metrics[f"delta_energy_importance_bins_top{cutoff}_{family}"] = float(np.sum(weights * d_abs) / denom)
+    metrics.update(robust_importance_product_metrics(d, a))
+    return metrics
+
+
+def robust_importance_product_metrics(
+    delta_flat,
+    importance_flat,
+    *,
+    top_percents=(3, 5, 10),
+    log_bases=(1.5, 2.0, 2.718281828459045, 10.0),
+    power_alphas=(0.25, 0.5, 0.75),
+    trim_quantiles=(99.0, 99.5),
+):
+    import math
+    import numpy as np
+
+    d = np.asarray(delta_flat, dtype="float64").reshape(-1)
+    a = np.asarray(importance_flat, dtype="float64").reshape(-1)
+    n = min(d.size, a.size)
+    if n == 0:
+        return {}
+    d_abs = np.abs(d[:n])
+    a_abs = np.abs(a[:n])
+    denom = float(d_abs.sum() + 1e-12)
+    a_scaled = a_abs / float(np.nanmax(a_abs) + 1e-12)
+    order = np.argsort(-a_abs, kind="stable")
+    metrics = {}
+
+    for top_percent in top_percents:
+        top_percent_int = int(top_percent)
+        k = n if float(top_percent) >= 100 else max(1, int(round(float(top_percent) / 100.0 * n)))
+        idx = order[: min(k, n)]
+        d_top = d_abs[idx]
+        a_top = a_scaled[idx]
+        raw_product = a_top * d_top
+        metrics[f"delta_importance_product_top{top_percent_int}_raw"] = float(np.sum(raw_product) / denom)
+
+        for base in log_bases:
+            base_float = float(base)
+            if base_float <= 1.0:
+                continue
+            compressed = np.log1p((base_float - 1.0) * a_top) / math.log(base_float)
+            base_label = "e" if abs(base_float - math.e) < 1e-9 else f"{base_float:g}".replace(".", "p")
+            metrics[f"delta_importance_product_top{top_percent_int}_logbase_{base_label}"] = float(np.sum(compressed * d_top) / denom)
+
+        for alpha in power_alphas:
+            alpha_float = float(alpha)
+            compressed = np.power(a_top, alpha_float)
+            alpha_label = f"{alpha_float:g}".replace(".", "p")
+            metrics[f"delta_importance_product_top{top_percent_int}_power_{alpha_label}"] = float(np.sum(compressed * d_top) / denom)
+
+        for q in trim_quantiles:
+            q_float = float(q)
+            if raw_product.size:
+                cap = float(np.nanpercentile(raw_product, q_float))
+                trimmed = np.minimum(raw_product, cap)
+            else:
+                trimmed = raw_product
+            q_label = f"{q_float:g}".replace(".", "p")
+            metrics[f"delta_importance_product_top{top_percent_int}_trim_q{q_label}"] = float(np.sum(trimmed) / denom)
+
     return metrics
 
 

@@ -60,6 +60,42 @@ def make_celeb_patch_success_experiment(
     return attack_config, config, PatchSuccessExperiment(config)
 
 
+def make_coco_people_patch_success_experiment(
+    *,
+    pool_size: int = 7200,
+    n_success: int = 3000,
+    n_fail: int = 3000,
+    target_layer: str = "model.22",
+    n_steps: int = 8,
+    alpha_batch_size: int = 8,
+    metrics_batch_size: int = 1024,
+    device: str | None = "mps",
+) -> tuple[AttackConfig, ExperimentConfig, PatchSuccessExperiment]:
+    attack_config = AttackConfig(
+        dataset_path=["../datasets/COCO_people"],
+        patch_path="../data/patch.png",
+        model_path="yolo11s.pt",
+        output_dir="new_experiments/outputs/patch_success_analysis",
+        pool_size=int(pool_size),
+        n_success=int(n_success),
+        n_fail=int(n_fail),
+        inference_batch_size=32,
+        show_progress=True,
+        success_thresh=0.30,
+        seed=17,
+        device=device,
+        conf=0.01,
+    )
+    config = ExperimentConfig(
+        attack=attack_config,
+        target_layer=target_layer,
+        n_steps=int(n_steps),
+        alpha_batch_size=int(alpha_batch_size),
+        metrics_batch_size=int(metrics_batch_size),
+    )
+    return attack_config, config, PatchSuccessExperiment(config)
+
+
 def load_segmentig_success_failure_rows(
     exp: PatchSuccessExperiment,
     *,
@@ -76,10 +112,13 @@ def load_segmentig_success_failure_rows(
 
 
 def select_balanced_rows(rows_df: pd.DataFrame, *, per_class: int) -> pd.DataFrame:
-    success_rows = rows_df[rows_df["success"].astype(bool)].head(int(per_class))
-    fail_rows = rows_df[~rows_df["success"].astype(bool)].head(int(per_class))
-    if len(success_rows) < int(per_class) or len(fail_rows) < int(per_class):
-        raise RuntimeError(f"Need {per_class} success/fail rows, got {len(success_rows)} / {len(fail_rows)}")
+    success_all = rows_df[rows_df["success"].astype(bool)]
+    fail_all = rows_df[~rows_df["success"].astype(bool)]
+    limit = min(int(per_class), len(success_all), len(fail_all))
+    if limit <= 0:
+        raise RuntimeError(f"Need at least one success/fail row, got {len(success_all)} / {len(fail_all)}")
+    success_rows = success_all.head(limit)
+    fail_rows = fail_all.head(limit)
     return pd.concat([success_rows, fail_rows], ignore_index=True)
 
 

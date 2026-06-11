@@ -9,9 +9,10 @@ from typing import Any
 
 def select_balanced_examples(exp, *, per_class: int):
     cache = exp.get_cache()
-    selected = cache.successes[: int(per_class)] + cache.failures[: int(per_class)]
-    if len(cache.successes) < int(per_class) or len(cache.failures) < int(per_class):
-        raise RuntimeError(f"Need {per_class} success/fail examples, got {len(cache.successes)} / {len(cache.failures)}")
+    limit = min(int(per_class), len(cache.successes), len(cache.failures))
+    if limit <= 0:
+        raise RuntimeError(f"Need at least one success/fail example, got {len(cache.successes)} / {len(cache.failures)}")
+    selected = cache.successes[:limit] + cache.failures[:limit]
     return selected
 
 
@@ -86,21 +87,35 @@ def compute_or_load_channel_summary(
         "signed": {"importance": None, "delta": None},
     }
     example_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
     for idx, example in enumerate(selected, start=1):
-        layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
-        if layer_maps is None:
-            if model is None or layer is None:
-                _yolo, model = exp.load_model()
-                layer = get_module_by_name(model, layer_name)
-            ctx = exp._context_for_example(example, image_variant="clean")
-            layer_maps = exp._compute_or_load_segmentig_layer_maps(
-                example,
-                ctx,
-                model=model,
-                layer=layer,
-                layer_name=layer_name,
-                include_clean_activation=False,
+        try:
+            layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
+            if layer_maps is None:
+                if model is None or layer is None:
+                    _yolo, model = exp.load_model()
+                    layer = get_module_by_name(model, layer_name)
+                ctx = exp._context_for_example(example, image_variant="clean")
+                layer_maps = exp._compute_or_load_segmentig_layer_maps(
+                    example,
+                    ctx,
+                    model=model,
+                    layer=layer,
+                    layer_name=layer_name,
+                    include_clean_activation=False,
+                )
+        except Exception as exc:  # noqa: BLE001 - one unusable example should not stop channel cache building.
+            skipped_rows.append(
+                {
+                    "path": example.path,
+                    "success": bool(example.success),
+                    "drop": float(example.drop),
+                    "reason": f"{type(exc).__name__}: {exc}",
+                }
             )
+            if idx % max(1, int(getattr(exp.config, "metrics_batch_size", 64))) == 0:
+                exp._release_batch_memory()
+            continue
         delta_chw = layer_maps["delta_chw"]
         importance_chw = layer_maps["segmentig_chw"]
         for variant in ("unsigned", "signed"):
@@ -133,9 +148,11 @@ def compute_or_load_channel_summary(
         "channels": channels,
         "variants": sums,
         "examples": example_rows,
+        "skipped": skipped_rows,
         "n_examples": len(example_rows),
         "n_success": sum(row["success"] for row in example_rows),
         "n_fail": sum(not row["success"] for row in example_rows),
+        "n_skipped": len(skipped_rows),
         "cache_path": str(cache_path),
         "loaded_from_cache": False,
     }
@@ -206,10 +223,19 @@ def channel_example_scores(exp, examples, *, layer_name: str, channel: int):
     import pandas as pd
 
     rows = []
+    skipped_rows = []
     for example in examples:
         layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
         if layer_maps is None:
-            raise FileNotFoundError(f"Layer map cache is missing for {example.path}")
+            skipped_rows.append(
+                {
+                    "path": example.path,
+                    "success": bool(example.success),
+                    "drop": float(example.drop),
+                    "reason": "missing layer map cache",
+                }
+            )
+            continue
         importance = _as_chw(layer_maps["segmentig_chw"])
         delta = _as_chw(layer_maps["delta_chw"])
         ch = int(channel)
@@ -228,7 +254,10 @@ def channel_example_scores(exp, examples, *, layer_name: str, channel: int):
                 "layer_maps_cache_path": str(layer_maps["cache_path"]),
             }
         )
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out.attrs["skipped"] = skipped_rows
+    out.attrs["n_skipped"] = len(skipped_rows)
+    return out
 
 
 def _normalize_positive(values, *, q: float = 99.0):
@@ -274,6 +303,9 @@ def plot_channel_importance_overlays(
     import numpy as np
 
     scores = channel_example_scores(exp, examples, layer_name=layer_name, channel=int(channel))
+    if scores.empty:
+        skipped = int(scores.attrs.get("n_skipped", 0))
+        raise RuntimeError(f"No cached layer maps available for channel {int(channel)} overlays; skipped={skipped}.")
     top = scores.sort_values("importance_abs_sum", ascending=False).head(int(max_examples))
     fig, axes = plt.subplots(len(top), 3, figsize=(13, max(3.0, 3.0 * len(top))), squeeze=False, constrained_layout=True)
     by_path = {item.path: item for item in examples}
@@ -282,7 +314,10 @@ def plot_channel_importance_overlays(
         clean_lb, _patched_lb, _patch_bbox = exp._images_for_example(example)
         layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
         if layer_maps is None:
-            raise FileNotFoundError(f"Layer map cache is missing for {example.path}")
+            for col in range(3):
+                axes[row_idx, col].axis("off")
+            axes[row_idx, 0].set_title(f"skipped missing layer map\n{Path(row.path).name}", fontsize=9)
+            continue
         importance = _as_chw(layer_maps["segmentig_chw"])[int(channel)]
         abs_norm = _resize_map(_normalize_positive(np.abs(importance)), clean_lb.size)
         signed_norm = _resize_map(_normalize_signed(importance), clean_lb.size)
@@ -302,7 +337,10 @@ def plot_channel_importance_overlays(
         for col in range(3):
             axes[row_idx, col].axis("off")
     fig.suptitle(f"{layer_name} channel {int(channel)}: top-{len(top)} images by abs importance")
-    return fig, top.reset_index(drop=True)
+    top_out = top.reset_index(drop=True)
+    top_out.attrs["skipped"] = scores.attrs.get("skipped", [])
+    top_out.attrs["n_skipped"] = scores.attrs.get("n_skipped", 0)
+    return fig, top_out
 
 
 def top_channels_by_importance(summary: dict[str, Any], *, percent: float):
@@ -316,6 +354,200 @@ def top_channels_by_importance(summary: dict[str, Any], *, percent: float):
         k = max(1, int(round(float(percent) / 100.0 * channels.size)))
     order = np.argsort(-importance, kind="stable")[:k]
     return channels[order]
+
+
+def channel_filtered_spatial_map_summary(
+    exp,
+    summary: dict[str, Any],
+    examples,
+    *,
+    fractions=(1, 10, 100),
+    individual_per_class: int = 2,
+):
+    import numpy as np
+
+    layer_name = str(summary["layer_name"])
+    selected = list(examples)
+    fraction_items = []
+    for percent in fractions:
+        fraction_items.append(
+            {
+                "percent": float(percent),
+                "name": f"{int(percent)}%" if float(percent) < 100 else "100%",
+                "channels": top_channels_by_importance(summary, percent=float(percent)),
+            }
+        )
+
+    individual_counts = {True: 0, False: 0}
+    individual_records = []
+    aggregate = {
+        True: {item["name"]: {"delta": [], "importance": []} for item in fraction_items},
+        False: {item["name"]: {"delta": [], "importance": []} for item in fraction_items},
+    }
+    skipped_rows = []
+    for example in selected:
+        layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
+        if layer_maps is None:
+            skipped_rows.append(
+                {
+                    "path": example.path,
+                    "success": bool(example.success),
+                    "drop": float(example.drop),
+                    "reason": "missing layer map cache",
+                }
+            )
+            continue
+        success = bool(example.success)
+        delta_chw = _as_chw(layer_maps["delta_chw"])
+        importance_chw = _as_chw(layer_maps["segmentig_chw"])
+        maps = {}
+        for item in fraction_items:
+            selected_channels = item["channels"]
+            delta = delta_chw[selected_channels]
+            importance = importance_chw[selected_channels]
+            delta_map = np.mean(np.abs(delta), axis=0).astype("float32", copy=False)
+            importance_map = np.mean(np.abs(importance), axis=0).astype("float32", copy=False)
+            maps[item["name"]] = {"delta": delta_map, "importance": importance_map}
+            aggregate[success][item["name"]]["delta"].append(delta_map)
+            aggregate[success][item["name"]]["importance"].append(importance_map)
+
+        if individual_counts[success] < int(individual_per_class):
+            clean_lb, _patched_lb, _patch_bbox = exp._images_for_example(example)
+            individual_records.append(
+                {
+                    "path": example.path,
+                    "success": success,
+                    "drop": float(example.drop),
+                    "clean_image": np.asarray(clean_lb),
+                    "maps": maps,
+                }
+            )
+            individual_counts[success] += 1
+
+    average_maps = {}
+    for success in (True, False):
+        group_name = "success" if success else "fail"
+        average_maps[group_name] = {}
+        for item in fraction_items:
+            name = item["name"]
+            average_maps[group_name][name] = {}
+            for kind in ("delta", "importance"):
+                values = aggregate[success][name][kind]
+                if values:
+                    average_maps[group_name][name][kind] = np.mean(np.stack(values, axis=0), axis=0).astype("float32", copy=False)
+                else:
+                    average_maps[group_name][name][kind] = np.zeros((1, 1), dtype="float32")
+
+    return {
+        "layer_name": layer_name,
+        "fractions": fraction_items,
+        "individual_records": individual_records,
+        "average_maps": average_maps,
+        "n_success": sum(len(aggregate[True][item["name"]]["delta"]) for item in fraction_items[:1]),
+        "n_fail": sum(len(aggregate[False][item["name"]]["delta"]) for item in fraction_items[:1]),
+        "skipped": skipped_rows,
+        "n_skipped": len(skipped_rows),
+    }
+
+
+def plot_channel_filtered_individual_spatial_maps(summary_maps: dict[str, Any]):
+    import matplotlib.pyplot as plt
+
+    from .activations import robust_normalize
+
+    records = list(summary_maps["individual_records"])
+    fractions = list(summary_maps["fractions"])
+    n_rows = max(1, len(records))
+    n_cols = 1 + 2 * len(fractions)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(3.1 * n_cols, 3.0 * n_rows), squeeze=False, constrained_layout=True)
+    for row_idx, record in enumerate(records):
+        label = "success" if record["success"] else "fail"
+        axes[row_idx, 0].imshow(record["clean_image"])
+        axes[row_idx, 0].set_title(f"{label} | drop={record['drop']:.3f}")
+        axes[row_idx, 0].set_xticks([])
+        axes[row_idx, 0].set_yticks([])
+        for frac_idx, item in enumerate(fractions):
+            name = item["name"]
+            delta_ax = axes[row_idx, 1 + frac_idx]
+            delta_ax.imshow(robust_normalize(record["maps"][name]["delta"]), cmap="magma", vmin=0, vmax=1)
+            delta_ax.set_title(f"delta | {name} ch")
+            delta_ax.set_xticks([])
+            delta_ax.set_yticks([])
+
+            importance_ax = axes[row_idx, 1 + len(fractions) + frac_idx]
+            importance_ax.imshow(robust_normalize(record["maps"][name]["importance"]), cmap="viridis", vmin=0, vmax=1)
+            importance_ax.set_title(f"importance | {name} ch")
+            importance_ax.set_xticks([])
+            importance_ax.set_yticks([])
+    for row_idx in range(len(records), n_rows):
+        for col_idx in range(n_cols):
+            axes[row_idx, col_idx].axis("off")
+    fig.suptitle(f"{summary_maps['layer_name']} channel-filtered maps for individual images")
+    return fig
+
+
+def plot_channel_filtered_average_spatial_maps(summary_maps: dict[str, Any]):
+    import matplotlib.pyplot as plt
+
+    from .activations import robust_normalize
+
+    fractions = list(summary_maps["fractions"])
+    groups = [("success", summary_maps.get("n_success", 0)), ("fail", summary_maps.get("n_fail", 0))]
+    n_cols = 2 * len(fractions)
+    fig, axes = plt.subplots(len(groups), n_cols, figsize=(3.1 * n_cols, 6.0), squeeze=False, constrained_layout=True)
+    for row_idx, (group, count) in enumerate(groups):
+        for frac_idx, item in enumerate(fractions):
+            name = item["name"]
+            delta_ax = axes[row_idx, frac_idx]
+            delta_ax.imshow(robust_normalize(summary_maps["average_maps"][group][name]["delta"]), cmap="magma", vmin=0, vmax=1)
+            delta_ax.set_title(f"{group} n={count} | delta | {name} ch")
+            delta_ax.set_xticks([])
+            delta_ax.set_yticks([])
+
+            importance_ax = axes[row_idx, len(fractions) + frac_idx]
+            importance_ax.imshow(robust_normalize(summary_maps["average_maps"][group][name]["importance"]), cmap="viridis", vmin=0, vmax=1)
+            importance_ax.set_title(f"{group} n={count} | importance | {name} ch")
+            importance_ax.set_xticks([])
+            importance_ax.set_yticks([])
+    fig.suptitle(f"{summary_maps['layer_name']} average channel-filtered maps by attack outcome")
+    return fig
+
+
+def compute_or_load_channel_filtered_spatial_map_summary(
+    exp,
+    summary: dict[str, Any],
+    examples,
+    *,
+    fractions=(1, 10, 100),
+    individual_per_class: int = 2,
+    force: bool = False,
+):
+    selected = list(examples)
+    layer_name = str(summary["layer_name"])
+    cache_path = _analysis_cache_path(
+        exp,
+        selected,
+        layer_name=layer_name,
+        analysis_name=f"channel_filtered_spatial_maps_v1_ind{int(individual_per_class)}",
+        fractions=fractions,
+    )
+    if cache_path.exists() and not force:
+        with cache_path.open("rb") as f:
+            out = pickle.load(f)
+        out["loaded_from_cache"] = True
+        out["cache_path"] = str(cache_path)
+        return out
+    maps = channel_filtered_spatial_map_summary(
+        exp,
+        summary,
+        selected,
+        fractions=fractions,
+        individual_per_class=int(individual_per_class),
+    )
+    out = {"maps": maps, "loaded_from_cache": False, "cache_path": str(cache_path)}
+    with cache_path.open("wb") as f:
+        pickle.dump(out, f)
+    return out
 
 
 def ranked_neuron_delta_by_channel_fraction(summary: dict[str, Any], examples, *, exp, fractions=(1, 10, 100)):
@@ -334,10 +566,19 @@ def ranked_neuron_delta_by_channel_fraction(summary: dict[str, Any], examples, *
         n_success = 0
         n_fail = 0
         flat_neuron_ids = None
+        skipped_rows = []
         for example in examples:
             layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
             if layer_maps is None:
-                raise FileNotFoundError(f"Layer map cache is missing for {example.path}")
+                skipped_rows.append(
+                    {
+                        "path": example.path,
+                        "success": bool(example.success),
+                        "drop": float(example.drop),
+                        "reason": "missing layer map cache",
+                    }
+                )
+                continue
             importance = _as_chw(layer_maps["segmentig_chw"])[selected_channels]
             delta = _as_chw(layer_maps["delta_chw"])[selected_channels]
             imp_flat = np.abs(importance).reshape(-1)
@@ -373,6 +614,8 @@ def ranked_neuron_delta_by_channel_fraction(summary: dict[str, Any], examples, *
             "fail_delta_abs_mean": (delta_abs_fail / max(1, n_fail))[order],
             "n_success": n_success,
             "n_fail": n_fail,
+            "skipped": skipped_rows,
+            "n_skipped": len(skipped_rows),
         }
     return rows
 
@@ -580,10 +823,19 @@ def spiral_delta_profiles_by_channel_fraction(summary: dict[str, Any], examples,
     for percent in fractions:
         selected_channels = top_channels_by_importance(summary, percent=float(percent))
         records = []
+        skipped_rows = []
         for example in examples:
             layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
             if layer_maps is None:
-                raise FileNotFoundError(f"Layer map cache is missing for {example.path}")
+                skipped_rows.append(
+                    {
+                        "path": example.path,
+                        "success": bool(example.success),
+                        "drop": float(example.drop),
+                        "reason": "missing layer map cache",
+                    }
+                )
+                continue
             delta = _as_chw(layer_maps["delta_chw"])[selected_channels]
             importance = _as_chw(layer_maps["segmentig_chw"])[selected_channels]
             spatial = np.mean(np.abs(delta), axis=0)
@@ -605,6 +857,8 @@ def spiral_delta_profiles_by_channel_fraction(summary: dict[str, Any], examples,
             "percent": float(percent),
             "channels": selected_channels,
             "records": records,
+            "skipped": skipped_rows,
+            "n_skipped": len(skipped_rows),
         }
     return rows
 
@@ -758,10 +1012,19 @@ def square_ring_delta_profiles_by_channel_fraction(summary: dict[str, Any], exam
     for percent in fractions:
         selected_channels = top_channels_by_importance(summary, percent=float(percent))
         records = []
+        skipped_rows = []
         for example in examples:
             layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
             if layer_maps is None:
-                raise FileNotFoundError(f"Layer map cache is missing for {example.path}")
+                skipped_rows.append(
+                    {
+                        "path": example.path,
+                        "success": bool(example.success),
+                        "drop": float(example.drop),
+                        "reason": "missing layer map cache",
+                    }
+                )
+                continue
             delta = _as_chw(layer_maps["delta_chw"])[selected_channels]
             importance = _as_chw(layer_maps["segmentig_chw"])[selected_channels]
             spatial = np.sum(np.abs(delta), axis=0)
@@ -780,6 +1043,8 @@ def square_ring_delta_profiles_by_channel_fraction(summary: dict[str, Any], exam
             "percent": float(percent),
             "channels": selected_channels,
             "records": records,
+            "skipped": skipped_rows,
+            "n_skipped": len(skipped_rows),
         }
     return rows
 
@@ -812,6 +1077,166 @@ def compute_or_load_square_ring_delta_profiles_by_channel_fraction(
     with cache_path.open("wb") as f:
         pickle.dump(out, f)
     return out
+
+
+def cached_failure_diagnosis_from_layer_maps(exp, examples, *, layer_name: str = "model.22", top_percent: float = 5.0):
+    import numpy as np
+
+    from .activations import robust_normalize
+    from .metrics import alignment_metrics
+
+    groups = {
+        "success": {
+            "delta_energy": [],
+            "signed_delta": [],
+            "delta_in_important": [],
+            "importance": [],
+            "delta_outside_important": [],
+            "rows": [],
+        },
+        "fail": {
+            "delta_energy": [],
+            "signed_delta": [],
+            "delta_in_important": [],
+            "importance": [],
+            "delta_outside_important": [],
+            "rows": [],
+        },
+    }
+    skipped_rows = []
+    for example in examples:
+        layer_maps = exp._load_layer_map_cache(example, layer_name=layer_name, include_clean_activation=False)
+        if layer_maps is None:
+            skipped_rows.append(
+                {
+                    "path": example.path,
+                    "success": bool(example.success),
+                    "drop": float(example.drop),
+                    "reason": "missing layer map cache",
+                }
+            )
+            continue
+        delta = _as_chw(layer_maps["delta_chw"])
+        importance = _as_chw(layer_maps["segmentig_chw"])
+        c = min(delta.shape[0], importance.shape[0])
+        h = min(delta.shape[1], importance.shape[1])
+        w = min(delta.shape[2], importance.shape[2])
+        delta = delta[:c, :h, :w]
+        importance = importance[:c, :h, :w]
+
+        delta_abs = np.abs(delta)
+        importance_abs = np.abs(importance)
+        flat_importance = importance_abs.reshape(-1)
+        k = max(1, int(round(float(top_percent) / 100.0 * flat_importance.size)))
+        top_idx = np.argpartition(flat_importance, -min(k, flat_importance.size))[-min(k, flat_importance.size) :]
+        important_mask = np.zeros(flat_importance.shape, dtype="float64")
+        important_mask[top_idx] = 1.0
+        important_mask = important_mask.reshape(importance_abs.shape)
+
+        delta_energy = np.sqrt(np.mean(delta * delta, axis=0).clip(min=0.0))
+        signed_delta = np.mean(delta, axis=0)
+        delta_in_important = np.sqrt(np.mean((delta_abs * important_mask) ** 2, axis=0).clip(min=0.0))
+        delta_outside_important = np.sqrt(np.mean((delta_abs * (1.0 - important_mask)) ** 2, axis=0).clip(min=0.0))
+        importance_map = np.mean(importance_abs, axis=0)
+
+        group = "success" if example.success else "fail"
+        groups[group]["delta_energy"].append(delta_energy)
+        groups[group]["signed_delta"].append(signed_delta)
+        groups[group]["delta_in_important"].append(delta_in_important)
+        groups[group]["delta_outside_important"].append(delta_outside_important)
+        groups[group]["importance"].append(importance_map)
+
+        delta_hw_flat = delta_energy.reshape(-1)
+        spatial_k = max(1, int(round(float(top_percent) / 100.0 * delta_hw_flat.size)))
+        align = alignment_metrics(delta.reshape(-1), importance.reshape(-1), top_percent=float(top_percent))
+        row = {
+            "path": example.path,
+            "success": bool(example.success),
+            "drop": float(example.drop),
+            "delta_l2_rms": float(np.sqrt(np.mean(delta_hw_flat * delta_hw_flat))),
+            "topk_energy_frac": float(np.sort(delta_hw_flat)[-spatial_k:].sum() / (delta_hw_flat.sum() + 1e-12)),
+            "layer_maps_cache_path": str(layer_maps["cache_path"]),
+            "layer_maps_loaded_from_cache": bool(layer_maps["loaded_from_cache"]),
+        }
+        row.update({f"segmentig_{name}": value for name, value in align.items()})
+        groups[group]["rows"].append(row)
+
+    def mean_map(items, *, signed: bool = False):
+        if not items:
+            return np.zeros((1, 1), dtype="float32")
+        return robust_normalize(np.mean(np.stack(items, axis=0), axis=0), signed=signed)
+
+    maps = {
+        group: {
+            key: mean_map(groups[group][key], signed=(key == "signed_delta"))
+            for key in ("delta_energy", "signed_delta", "delta_in_important", "importance", "delta_outside_important")
+        }
+        for group in groups
+    }
+    metric_names = [
+        "delta_l2_rms",
+        "topk_energy_frac",
+        "segmentig_delta_energy_in_importance_top",
+        "segmentig_align_cosine",
+    ]
+    metric_means = {}
+    for group in groups:
+        rows = groups[group]["rows"]
+        metric_means[group] = {
+            name: float(np.nanmean([row.get(name, np.nan) for row in rows])) if rows else float("nan")
+            for name in metric_names
+        }
+    return {
+        "maps": maps,
+        "metric_means": metric_means,
+        "rows": groups["success"]["rows"] + groups["fail"]["rows"],
+        "skipped": skipped_rows,
+        "layer": layer_name,
+        "top_percent": float(top_percent),
+        "n_success": len(groups["success"]["rows"]),
+        "n_fail": len(groups["fail"]["rows"]),
+        "n_skipped": len(skipped_rows),
+    }
+
+
+def compute_or_load_cached_failure_diagnosis(
+    exp,
+    examples,
+    *,
+    layer_name: str = "model.22",
+    top_percent: float = 5.0,
+    force: bool = False,
+):
+    from .plots import plot_failure_diagnosis
+
+    selected = list(examples)
+    cache_path = _analysis_cache_path(
+        exp,
+        selected,
+        layer_name=layer_name,
+        analysis_name="cached_failure_diagnosis_v1",
+        fractions=(float(top_percent),),
+    )
+    if cache_path.exists() and not force:
+        with cache_path.open("rb") as f:
+            diagnosis = pickle.load(f)
+        diagnosis["loaded_from_cache"] = True
+        diagnosis["cache_path"] = str(cache_path)
+    else:
+        diagnosis = cached_failure_diagnosis_from_layer_maps(
+            exp,
+            selected,
+            layer_name=layer_name,
+            top_percent=float(top_percent),
+        )
+        diagnosis["loaded_from_cache"] = False
+        diagnosis["cache_path"] = str(cache_path)
+        with cache_path.open("wb") as f:
+            pickle.dump(diagnosis, f)
+    figure_path = exp.figures_dir / "failure_diagnosis_cached_segmentig_layer_maps.png"
+    fig = plot_failure_diagnosis(diagnosis, save_path=figure_path)
+    diagnosis["figure_path"] = str(figure_path)
+    return {"diagnosis": diagnosis, "figure": fig, "loaded_from_cache": bool(diagnosis["loaded_from_cache"]), "cache_path": str(cache_path)}
 
 
 def plot_square_ring_delta_profiles(square_ring_profiles: dict[str, dict[str, Any]]):

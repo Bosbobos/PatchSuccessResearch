@@ -234,7 +234,7 @@ class PatchSuccessExperiment:
             "n_steps": int(self.config.n_steps),
             "alpha_batch_size": int(self.config.alpha_batch_size),
             "top_percent": float(top_percent),
-            "method_version": 1,
+            "method_version": 2,
         }
         key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
         return self.derived_cache_dir / f"segmentig_success_failure_metrics_{key}.pkl"
@@ -819,26 +819,40 @@ class PatchSuccessExperiment:
         model = None
         layer = None
         metric_rows = []
+        skipped_rows = []
         metrics_batch_size = max(1, int(getattr(self.config, "metrics_batch_size", 64)))
         for example_idx, example in enumerate(selected, start=1):
-            layer_maps = self._load_layer_map_cache(
-                example,
-                layer_name=layer_name,
-                include_clean_activation=False,
-            )
-            if layer_maps is None:
-                if model is None or layer is None:
-                    _yolo, model = self.load_model()
-                    layer = get_module_by_name(model, layer_name)
-                ctx = self._context_for_example(example, image_variant="clean")
-                layer_maps = self._compute_or_load_segmentig_layer_maps(
+            try:
+                layer_maps = self._load_layer_map_cache(
                     example,
-                    ctx,
-                    model=model,
-                    layer=layer,
                     layer_name=layer_name,
                     include_clean_activation=False,
                 )
+                if layer_maps is None:
+                    if model is None or layer is None:
+                        _yolo, model = self.load_model()
+                        layer = get_module_by_name(model, layer_name)
+                    ctx = self._context_for_example(example, image_variant="clean")
+                    layer_maps = self._compute_or_load_segmentig_layer_maps(
+                        example,
+                        ctx,
+                        model=model,
+                        layer=layer,
+                        layer_name=layer_name,
+                        include_clean_activation=False,
+                    )
+            except Exception as exc:  # noqa: BLE001 - one unusable example should not stop cache building.
+                skipped_rows.append(
+                    {
+                        "path": example.path,
+                        "success": bool(example.success),
+                        "drop": float(example.drop),
+                        "reason": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                if example_idx % metrics_batch_size == 0:
+                    self._release_batch_memory()
+                continue
             delta_chw = layer_maps["delta_chw"]
             segmentig_chw = layer_maps["segmentig_chw"]
             delta_flat = delta_chw.reshape(-1)
@@ -884,6 +898,9 @@ class PatchSuccessExperiment:
                 self._release_batch_memory()
         self._release_batch_memory()
 
+        if not metric_rows:
+            raise RuntimeError(f"No valid SegmentIG success/failure rows; skipped={len(skipped_rows)}")
+
         labels = [r["success"] for r in metric_rows]
         metric_names = [
             k
@@ -914,7 +931,13 @@ class PatchSuccessExperiment:
             )
             plt.close(fig)
             item["figure_path"] = str(path)
-        result = {"rows": metric_rows, "quality": quality, "cache_path": str(cache_path), "loaded_from_cache": False}
+        result = {
+            "rows": metric_rows,
+            "quality": quality,
+            "skipped": skipped_rows,
+            "cache_path": str(cache_path),
+            "loaded_from_cache": False,
+        }
         with cache_path.open("wb") as f:
             pickle.dump(result, f)
         return result

@@ -244,6 +244,10 @@ def build_attack_cache(config: AttackConfig, *, force: bool = False) -> AttackCa
                 chunk_records,
                 batch_size,
             ):
+                clean_detection = detection_dict_from_result(res_clean, target_class_id=target_class_id)
+                if clean_detection is None:
+                    failed_paths.append(f"{path}: no clean detection")
+                    continue
                 drop = float(conf_clean - conf_patch)
                 success = bool(drop > float(config.success_thresh))
                 if success:
@@ -259,7 +263,7 @@ def build_attack_cache(config: AttackConfig, *, force: bool = False) -> AttackCa
                         success=success,
                         patch_bbox_lb=tuple(float(v) for v in patch_bbox) if patch_bbox is not None else None,
                         target_class_id=target_class_id,
-                        clean_detection=detection_dict_from_result(res_clean, target_class_id=target_class_id),
+                        clean_detection=clean_detection,
                     )
                 )
             if progress is not None:
