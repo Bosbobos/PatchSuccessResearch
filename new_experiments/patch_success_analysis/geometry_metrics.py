@@ -538,7 +538,9 @@ def plot_padding_metric_quality(quality_df, *, metric_prefix: str = "right_"):
     q = pd.DataFrame(quality_df).copy()
     if metric_prefix:
         q = q[q["metric"].astype(str).str.startswith(str(metric_prefix))]
-    q = q.sort_values(["best_accuracy", "roc_auc"], ascending=False)
+    score_col = "best_balanced_accuracy" if "best_balanced_accuracy" in q.columns else "best_accuracy"
+    score_label = "best balanced accuracy" if score_col == "best_balanced_accuracy" else "best accuracy"
+    q = q.sort_values([score_col, "roc_auc"], ascending=False)
     fig, axes = plt.subplots(1, 2, figsize=(15.5, max(4.5, 0.42 * max(1, len(q)))), constrained_layout=True)
     y = np.arange(len(q), dtype=int)
     axes[0].barh(y, q["roc_auc"].astype("float64"), color="#72B7B2")
@@ -551,14 +553,14 @@ def plot_padding_metric_quality(quality_df, *, metric_prefix: str = "right_"):
     axes[0].set_title("Padding metric ROC-AUC")
     axes[0].grid(axis="x", alpha=0.25)
 
-    axes[1].barh(y, q["best_accuracy"].astype("float64"), color="#54A24B")
+    axes[1].barh(y, q[score_col].astype("float64"), color="#54A24B")
     axes[1].axvline(0.5, color="0.35", linestyle="--", linewidth=1.0)
     axes[1].set_yticks(y)
     axes[1].set_yticklabels([])
     axes[1].invert_yaxis()
     axes[1].set_xlim(0, 1)
-    axes[1].set_xlabel("best accuracy")
-    axes[1].set_title("Padding metric best accuracy")
+    axes[1].set_xlabel(score_label)
+    axes[1].set_title(f"Padding metric {score_label}")
     axes[1].grid(axis="x", alpha=0.25)
     fig.suptitle("Right-detected symmetric padding metric quality")
     return fig

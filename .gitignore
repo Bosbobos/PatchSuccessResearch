@@ -222,3 +222,4 @@ __marimo__/
 # Project-specific
 cache
 .DS_Store
+outputs

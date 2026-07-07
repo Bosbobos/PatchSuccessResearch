@@ -93,6 +93,69 @@ def best_accuracy(labels, scores):
     return best
 
 
+def best_balanced_accuracy(labels, scores):
+    import numpy as np
+
+    y = np.asarray(labels, dtype=bool)
+    s = np.asarray(scores, dtype="float64")
+    mask = np.isfinite(s)
+    y, s = y[mask], s[mask]
+    if y.size == 0:
+        return {
+            "balanced_accuracy": float("nan"),
+            "precision": float("nan"),
+            "recall": float("nan"),
+            "specificity": float("nan"),
+            "f1": float("nan"),
+            "accuracy": float("nan"),
+            "threshold": float("nan"),
+            "direction": 1,
+        }
+    candidates = np.unique(s)
+    thresholds = np.concatenate(([candidates[0] - 1e-12], (candidates[:-1] + candidates[1:]) / 2.0, [candidates[-1] + 1e-12]))
+    best = {
+        "balanced_accuracy": -1.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "specificity": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0,
+        "threshold": float(thresholds[0]),
+        "direction": 1,
+    }
+    for direction in (1, -1):
+        for thr in thresholds:
+            pred = s >= thr if direction == 1 else s <= thr
+            tp = float(np.sum(pred & y))
+            fp = float(np.sum(pred & ~y))
+            tn = float(np.sum(~pred & ~y))
+            fn = float(np.sum(~pred & y))
+            precision = tp / (tp + fp) if (tp + fp) else 0.0
+            recall = tp / (tp + fn) if (tp + fn) else 0.0
+            specificity = tn / (tn + fp) if (tn + fp) else 0.0
+            f1 = 2.0 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+            accuracy = (tp + tn) / max(1.0, tp + fp + tn + fn)
+            balanced = 0.5 * (recall + specificity)
+            if (balanced, f1, precision, recall, accuracy) > (
+                best["balanced_accuracy"],
+                best["f1"],
+                best["precision"],
+                best["recall"],
+                best["accuracy"],
+            ):
+                best = {
+                    "balanced_accuracy": float(balanced),
+                    "precision": float(precision),
+                    "recall": float(recall),
+                    "specificity": float(specificity),
+                    "f1": float(f1),
+                    "accuracy": float(accuracy),
+                    "threshold": float(thr),
+                    "direction": int(direction),
+                }
+    return best
+
+
 def roc_curve_points(labels, scores, *, direction: int = 1):
     import numpy as np
 
@@ -503,6 +566,7 @@ def metric_quality_rows(labels, metrics_by_name: dict[str, object]):
     for name, values in metrics_by_name.items():
         auc = roc_auc_score_manual(labels, values)
         best = best_accuracy(labels, values)
+        balanced = best_balanced_accuracy(labels, values)
         rows.append(
             {
                 "metric": name,
@@ -510,6 +574,14 @@ def metric_quality_rows(labels, metrics_by_name: dict[str, object]):
                 "best_accuracy": best["accuracy"],
                 "best_threshold": best["threshold"],
                 "best_direction": best["direction"],
+                "best_balanced_accuracy": balanced["balanced_accuracy"],
+                "balanced_precision": balanced["precision"],
+                "balanced_recall": balanced["recall"],
+                "balanced_specificity": balanced["specificity"],
+                "balanced_f1": balanced["f1"],
+                "balanced_accuracy_plain": balanced["accuracy"],
+                "balanced_threshold": balanced["threshold"],
+                "balanced_direction": balanced["direction"],
             }
         )
     return rows

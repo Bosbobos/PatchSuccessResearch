@@ -699,7 +699,7 @@ def compute_or_load_robust_product_compression_comparison(
 
     quality_df["family"] = quality_df["metric"].map(parse_family)
     quality_df["top_percent"] = quality_df["metric"].map(parse_top)
-    quality_df = quality_df.sort_values(["best_accuracy", "roc_auc"], ascending=False).reset_index(drop=True)
+    quality_df = quality_df.sort_values(["best_balanced_accuracy", "roc_auc", "best_accuracy"], ascending=False).reset_index(drop=True)
     out = {
         "metrics_df": metrics_df,
         "quality_df": quality_df,

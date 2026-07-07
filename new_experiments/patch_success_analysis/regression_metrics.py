@@ -21,6 +21,10 @@ DEFAULT_EXCLUDE_COLUMNS = {
 }
 
 
+def _bar_label_fontsize(n_rows: int) -> float:
+    return max(6.0, min(9.0, 180.0 / max(1, int(n_rows))))
+
+
 def regression_metric_columns(
     rows_df: pd.DataFrame,
     *,
@@ -175,20 +179,10 @@ def regression_similarity_table(
     mi_max = float(df["mutual_info"].max(skipna=True) or 0.0)
     df["mutual_info_norm"] = df["mutual_info"] / mi_max if mi_max > 0.0 else np.nan
     df["calibrated_error_score"] = 1.0 / (1.0 + df["calibrated_nrmse"])
-    df["main_score"] = df[
-        [
-            "abs_spearman",
-            "abs_pearson",
-            "abs_kendall",
-            "linear_r2",
-            "mutual_info_norm",
-            "distance_corr",
-            "calibrated_error_score",
-        ]
-    ].mean(
-        axis=1,
-        skipna=True,
-    )
+    # Primary ranking metric: monotonic agreement with drop.
+    # Other dependency diagnostics remain in the table but no longer enter the
+    # main leaderboard score.
+    df["main_score"] = df["abs_spearman"]
     return df.sort_values(["main_score", "abs_spearman", "abs_pearson"], ascending=False).reset_index(drop=True)
 
 
@@ -199,7 +193,7 @@ def _cache_path(exp: Any, rows_df: pd.DataFrame, *, target_col: str, metric_cols
         "metric_cols": list(metric_cols),
         "n_rows": int(len(rows_df)),
         "paths_head": rows_df.get("path", pd.Series(dtype=str)).head(20).astype(str).tolist(),
-        "method_version": 2,
+        "method_version": 3,
     }
     key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
     return exp.derived_cache_dir / f"drop_regression_similarity_{key}.pkl"
@@ -242,12 +236,22 @@ def plot_similarity_score_bars(similarity_df: pd.DataFrame, *, score_col: str = 
     import matplotlib.pyplot as plt
 
     df = similarity_df.sort_values(score_col, ascending=True)
+    score_label = "|Spearman| (main)" if score_col == "main_score" else score_col
     height = max(7.0, min(42.0, 0.19 * len(df) + 1.8))
     fig, ax = plt.subplots(figsize=(13, height), constrained_layout=True)
     colors = np.where(df["spearman"].to_numpy(dtype="float64") >= 0.0, "#4C78A8", "#F58518")
-    ax.barh(df["metric"], df[score_col], color=colors, alpha=0.85)
-    ax.set_title(f"All scalar metrics ranked by {score_col}")
-    ax.set_xlabel(score_col)
+    y = np.arange(len(df))
+    values = df[score_col].to_numpy(dtype="float64")
+    ax.barh(y, values, color=colors, alpha=0.85)
+    ax.set_yticks(y, df["metric"].astype(str).tolist())
+    fontsize = _bar_label_fontsize(len(df))
+    for yi, value in zip(y, values):
+        if np.isfinite(value):
+            ax.text(float(value) + 0.012, yi, f"{float(value):.3f}", va="center", ha="left", fontsize=fontsize, clip_on=False)
+    ax.set_title(f"All scalar metrics ranked by {score_label}")
+    ax.set_xlabel(score_label)
+    if score_col in {"main_score", "abs_spearman"}:
+        ax.set_xlim(0, 1.12)
     ax.grid(axis="x", alpha=0.25)
     return fig
 

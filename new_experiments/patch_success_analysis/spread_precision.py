@@ -27,6 +27,27 @@ def _ensure_plot_cache_env() -> None:
     os.environ.setdefault("XDG_CACHE_HOME", str(xdg))
 
 
+def _bar_label_fontsize(n_rows: int) -> float:
+    return max(6.0, min(9.0, 180.0 / max(1, int(n_rows))))
+
+
+def _quality_label(row, score_col: str) -> str:
+    score = row.get(score_col, np.nan)
+    if not np.isfinite(float(score)):
+        return ""
+    recall = row.get("balanced_recall", np.nan)
+    specificity = row.get("balanced_specificity", np.nan)
+    if np.isfinite(float(recall)) and np.isfinite(float(specificity)):
+        return f"{float(score):.3f} ({float(recall):.3f}/{float(specificity):.3f})"
+    return f"{float(score):.3f}"
+
+
+def _annotate_barh(ax, y, values, labels, *, fontsize: float):
+    for yi, value, label in zip(y, values, labels):
+        if np.isfinite(float(value)) and label:
+            ax.text(float(value) + 0.012, yi, label, va="center", ha="left", fontsize=fontsize, clip_on=False)
+
+
 def _cache_path(exp, examples, *, layer_name: str, top_percent: float):
     payload = {
         "attack_cache_key": exp.get_cache().cache_key,
@@ -35,7 +56,7 @@ def _cache_path(exp, examples, *, layer_name: str, top_percent: float):
         "detect_layer": exp.config.detect_layer,
         "target_mode": exp.config.target_mode,
         "top_percent": float(top_percent),
-        "method_version": 1,
+        "method_version": 2,
     }
     return exp.derived_cache_dir / f"spread_vs_precision_{_cache_key(payload)}.pkl"
 
@@ -233,7 +254,7 @@ def compute_or_load_spread_vs_precision(
     labels = rows_df["success"].astype(bool).to_numpy()
     quality = pd.DataFrame(metric_quality_rows(labels, {col: rows_df[col].to_numpy() for col in spread_cols + precision_cols}))
     quality["family"] = np.where(quality["metric"].str.startswith("spread_"), "spread", "precision")
-    quality = quality.sort_values(["best_accuracy", "roc_auc"], ascending=False).reset_index(drop=True)
+    quality = quality.sort_values(["best_balanced_accuracy", "roc_auc", "best_accuracy"], ascending=False).reset_index(drop=True)
 
     regression = regression_similarity_table(
         rows_df[["path", "success", "drop", *spread_cols, *precision_cols]],
@@ -265,17 +286,24 @@ def plot_family_quality_side_by_side(quality_df: pd.DataFrame, *, top_n: int = 1
 
     fig, axes = plt.subplots(1, 2, figsize=(15, 6), constrained_layout=True)
     for ax, family, color in [(axes[0], "spread", "#4C78A8"), (axes[1], "precision", "#F58518")]:
-        sub = quality_df[quality_df["family"] == family].head(int(top_n)).sort_values("best_accuracy")
-        ax.barh(sub["metric"], sub["best_accuracy"], color=color, alpha=0.85, label="best accuracy")
-        ax.scatter(sub["roc_auc"], sub["metric"], color="black", s=22, label="ROC-AUC", zorder=3)
+        score_col = "best_balanced_accuracy" if "best_balanced_accuracy" in quality_df.columns else "best_accuracy"
+        sub = quality_df[quality_df["family"] == family].head(int(top_n)).sort_values(score_col)
+        y = np.arange(len(sub))
+        values = sub[score_col].to_numpy(dtype="float64")
+        ax.barh(y, values, color=color, alpha=0.85, label="best balanced accuracy")
+        ax.set_yticks(y, sub["metric"].astype(str).tolist())
+        value_labels = [_quality_label(row, score_col) for _, row in sub.iterrows()]
+        _annotate_barh(ax, y, values, value_labels, fontsize=_bar_label_fontsize(len(sub)))
+        ax.scatter(sub["roc_auc"], y, color="black", s=22, label="ROC-AUC", zorder=3)
         ax.set_title(f"{family}: success/fail classification")
         ax.set_xlabel("score")
+        ax.set_xlim(0, 1.28)
         ax.grid(axis="x", alpha=0.25)
         ax.legend()
     return fig
 
 
-def plot_family_quality_combined_bar(quality_df: pd.DataFrame, *, top_n: int = 25, score_col: str = "best_accuracy"):
+def plot_family_quality_combined_bar(quality_df: pd.DataFrame, *, top_n: int = 25, score_col: str = "best_balanced_accuracy"):
     _ensure_plot_cache_env()
     import matplotlib.patches as mpatches
     import matplotlib.pyplot as plt
@@ -285,9 +313,13 @@ def plot_family_quality_combined_bar(quality_df: pd.DataFrame, *, top_n: int = 2
     score_col = str(score_col)
     if score_col not in quality_df.columns:
         raise KeyError(f"{score_col!r} was not found in quality_df")
+    score_label = "best balanced accuracy" if score_col == "best_balanced_accuracy" else score_col
     family_colors = {"spread": "#4C78A8", "precision": "#F58518"}
     sort_cols = [score_col]
     ascending = [False]
+    if score_col != "best_balanced_accuracy" and "best_balanced_accuracy" in quality_df.columns:
+        sort_cols.append("best_balanced_accuracy")
+        ascending.append(False)
     if score_col != "best_accuracy" and "best_accuracy" in quality_df.columns:
         sort_cols.append("best_accuracy")
         ascending.append(False)
@@ -302,20 +334,21 @@ def plot_family_quality_combined_bar(quality_df: pd.DataFrame, *, top_n: int = 2
     fig_h = max(5.0, 0.34 * len(sub) + 1.4)
     fig, ax = plt.subplots(figsize=(12, fig_h))
     y = np.arange(len(sub))
-    ax.barh(y, sub[score_col].to_numpy(dtype="float64"), color=colors, alpha=0.88)
+    values = sub[score_col].to_numpy(dtype="float64")
+    ax.barh(y, values, color=colors, alpha=0.88)
     if "roc_auc" in sub.columns and score_col != "roc_auc":
         ax.scatter(sub["roc_auc"].to_numpy(dtype="float64"), y, color="black", s=24, label="ROC-AUC", zorder=3)
     ax.set_yticks(y, labels.tolist())
-    ax.set_xlabel(score_col)
-    ax.set_title(f"Combined spread/precision classification metrics by {score_col}")
+    value_labels = [_quality_label(row, score_col) for _, row in sub.iterrows()]
+    _annotate_barh(ax, y, values, value_labels, fontsize=_bar_label_fontsize(len(sub)))
+    ax.set_xlabel(score_label)
+    ax.set_title(f"Combined spread/precision classification metrics by {score_label}")
+    ax.set_xlim(0, 1.28)
     ax.grid(axis="x", alpha=0.25)
     handles = [mpatches.Patch(color=color, label=family) for family, color in family_colors.items()]
     if "roc_auc" in sub.columns and score_col != "roc_auc":
         handles.append(ax.collections[0])
     ax.legend(handles=handles, loc="lower right")
-    for yi, value in zip(y, sub[score_col].to_numpy(dtype="float64")):
-        if np.isfinite(value):
-            ax.text(value, yi, f" {value:.3f}", va="center", fontsize=9)
     fig.tight_layout()
     return fig
 
@@ -327,10 +360,16 @@ def plot_family_regression_side_by_side(regression_df: pd.DataFrame, *, top_n: i
     fig, axes = plt.subplots(1, 2, figsize=(15, 6), constrained_layout=True)
     for ax, family, color in [(axes[0], "spread", "#4C78A8"), (axes[1], "precision", "#F58518")]:
         sub = regression_df[regression_df["family"] == family].head(int(top_n)).sort_values("main_score")
-        ax.barh(sub["metric"], sub["main_score"], color=color, alpha=0.85, label="main score")
-        ax.scatter(sub["abs_spearman"], sub["metric"], color="black", s=22, label="|Spearman|", zorder=3)
+        y = np.arange(len(sub))
+        values = sub["main_score"].to_numpy(dtype="float64")
+        ax.barh(y, values, color=color, alpha=0.85, label="|Spearman| (main)")
+        ax.set_yticks(y, sub["metric"].astype(str).tolist())
+        value_labels = [f"{value:.3f}" if np.isfinite(value) else "" for value in values]
+        _annotate_barh(ax, y, values, value_labels, fontsize=_bar_label_fontsize(len(sub)))
+        ax.scatter(sub["abs_spearman"], y, color="black", s=22, label="|Spearman|", zorder=3)
         ax.set_title(f"{family}: drop regression similarity")
-        ax.set_xlabel("score")
+        ax.set_xlabel("|Spearman|")
+        ax.set_xlim(0, 1.12)
         ax.grid(axis="x", alpha=0.25)
         ax.legend()
     return fig
@@ -346,6 +385,7 @@ def plot_family_regression_combined_bar(regression_df: pd.DataFrame, *, top_n: i
     score_col = str(score_col)
     if score_col not in regression_df.columns:
         raise KeyError(f"{score_col!r} was not found in regression_df")
+    score_label = "|Spearman| (main)" if score_col == "main_score" else score_col
     family_colors = {"spread": "#4C78A8", "precision": "#F58518"}
     sort_cols = [score_col]
     ascending = [False]
@@ -363,20 +403,21 @@ def plot_family_regression_combined_bar(regression_df: pd.DataFrame, *, top_n: i
     fig_h = max(5.0, 0.34 * len(sub) + 1.4)
     fig, ax = plt.subplots(figsize=(12, fig_h))
     y = np.arange(len(sub))
-    ax.barh(y, sub[score_col].to_numpy(dtype="float64"), color=colors, alpha=0.88)
+    values = sub[score_col].to_numpy(dtype="float64")
+    ax.barh(y, values, color=colors, alpha=0.88)
     if "abs_spearman" in sub.columns and score_col != "abs_spearman":
         ax.scatter(sub["abs_spearman"].to_numpy(dtype="float64"), y, color="black", s=24, label="|Spearman|", zorder=3)
     ax.set_yticks(y, labels.tolist())
-    ax.set_xlabel(score_col)
-    ax.set_title(f"Combined spread/precision regression metrics by {score_col}")
+    value_labels = [f"{value:.3f}" if np.isfinite(value) else "" for value in values]
+    _annotate_barh(ax, y, values, value_labels, fontsize=_bar_label_fontsize(len(sub)))
+    ax.set_xlabel(score_label)
+    ax.set_title(f"Combined spread/precision regression metrics by {score_label}")
+    ax.set_xlim(0, 1.12)
     ax.grid(axis="x", alpha=0.25)
     handles = [mpatches.Patch(color=color, label=family) for family, color in family_colors.items()]
     if "abs_spearman" in sub.columns and score_col != "abs_spearman":
         handles.append(ax.collections[0])
     ax.legend(handles=handles, loc="lower right")
-    for yi, value in zip(y, sub[score_col].to_numpy(dtype="float64")):
-        if np.isfinite(value):
-            ax.text(value, yi, f" {value:.3f}", va="center", fontsize=9)
     fig.tight_layout()
     return fig
 
@@ -471,14 +512,45 @@ def _raw_limits(values, *, signed: bool) -> tuple[float | None, float | None]:
     return float(np.min(finite)), float(np.max(finite))
 
 
-def plot_top_confident_channel_filtered_maps(exp, examples, *, layer_name: str = "model.22", top_n_per_group: int = 10, fractions=(1, 10, 100)):
+def _score_increase(example) -> float:
+    return float(example.conf_patch) - float(example.conf_clean)
+
+
+def plot_top_confident_channel_filtered_maps(
+    exp,
+    examples,
+    *,
+    layer_name: str = "model.22",
+    top_n_per_group: int = 10,
+    fractions=(1, 10, 100),
+    include_success: bool = True,
+    include_fail: bool = True,
+    fail_max_score_increase: float | None = None,
+    fail_min_score_increase: float | None = None,
+    title: str | None = None,
+):
     _ensure_plot_cache_env()
     import matplotlib.pyplot as plt
 
-    selected_success = sorted([item for item in examples if item.success], key=lambda item: float(item.drop), reverse=True)[: int(top_n_per_group)]
-    selected_fail = sorted([item for item in examples if not item.success], key=lambda item: float(item.drop))[: int(top_n_per_group)]
+    selected_success = (
+        sorted([item for item in examples if item.success], key=lambda item: float(item.drop), reverse=True)[: int(top_n_per_group)]
+        if include_success
+        else []
+    )
+    fail_candidates = [item for item in examples if not item.success]
+    if fail_max_score_increase is not None:
+        fail_candidates = [item for item in fail_candidates if _score_increase(item) <= float(fail_max_score_increase)]
+    if fail_min_score_increase is not None:
+        fail_candidates = [item for item in fail_candidates if _score_increase(item) > float(fail_min_score_increase)]
+    selected_fail = (
+        sorted(fail_candidates, key=lambda item: float(item.drop))[: int(top_n_per_group)]
+        if include_fail
+        else []
+    )
     records = [("success", item) for item in selected_success] + [("fail", item) for item in selected_fail]
     n_rows = len(records)
+    if n_rows == 0:
+        raise ValueError("No examples selected for channel-filtered visualization")
     n_cols = 2 + 2 * len(tuple(fractions))
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(3.15 * n_cols, max(3.0, 2.75 * n_rows)), squeeze=False, constrained_layout=True)
     skipped = []
@@ -491,7 +563,9 @@ def plot_top_confident_channel_filtered_maps(exp, examples, *, layer_name: str =
             delta = np.asarray(layer_maps["delta_chw"], dtype="float32")
             importance = np.asarray(layer_maps["segmentig_chw"], dtype="float32")
             axes[row_idx, 0].imshow(clean_lb)
-            axes[row_idx, 0].set_title(f"{group} clean\nrank {row_idx + 1}, drop={example.drop:.3f}")
+            axes[row_idx, 0].set_title(
+                f"{group} clean\nrank {row_idx + 1}, drop={example.drop:.3f}, Δscore={_score_increase(example):+.3f}"
+            )
             axes[row_idx, 1].imshow(patched_lb)
             axes[row_idx, 1].set_title(f"{group} patched\nclean={example.conf_clean:.3f}, patch={example.conf_patch:.3f}")
             for ax in axes[row_idx, :2]:
@@ -517,7 +591,7 @@ def plot_top_confident_channel_filtered_maps(exp, examples, *, layer_name: str =
             for ax in axes[row_idx]:
                 ax.axis("off")
             axes[row_idx, 0].set_title(f"{group}: skipped\n{type(exc).__name__}: {exc}")
-    fig.suptitle(f"Top-{top_n_per_group} confident success/fail: raw delta and importance maps by top importance channels")
+    fig.suptitle(title or f"Top-{top_n_per_group} confident success/fail: raw delta and importance maps by top importance channels")
     fig._spread_precision_skipped = skipped  # attach lightweight diagnostic for notebook access
     return fig
 
@@ -530,7 +604,7 @@ def _patch_excluded_cache_path(exp, examples, *, layer_name: str, fractions) -> 
         "detect_layer": exp.config.detect_layer,
         "target_mode": exp.config.target_mode,
         "fractions": [float(v) for v in fractions],
-        "method_version": 1,
+        "method_version": 2,
     }
     return exp.derived_cache_dir / f"patch_excluded_spread_metrics_{_cache_key(payload)}.pkl"
 

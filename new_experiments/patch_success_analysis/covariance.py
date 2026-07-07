@@ -982,10 +982,10 @@ def compute_or_load_covariance_split_metrics(
     quality_df = (
         pd.concat(quality_parts, ignore_index=True)
         if quality_parts
-        else pd.DataFrame(columns=["metric", "roc_auc", "best_accuracy", "best_threshold", "best_direction"])
+        else pd.DataFrame(columns=["metric", "roc_auc", "best_balanced_accuracy", "best_accuracy", "best_threshold", "best_direction"])
     )
     if not quality_df.empty:
-        quality_df = quality_df.sort_values(["best_accuracy", "roc_auc_effective"], ascending=False).reset_index(drop=True)
+        quality_df = quality_df.sort_values(["best_balanced_accuracy", "roc_auc_effective", "best_accuracy"], ascending=False).reset_index(drop=True)
 
     result = {
         "rows": rows_df,
@@ -1082,7 +1082,7 @@ def compute_or_load_importance_energy_focus_metrics(
     )
     if not quality.empty:
         quality["roc_auc_effective"] = quality["roc_auc"].map(lambda v: max(float(v), 1.0 - float(v)) if np.isfinite(v) else np.nan)
-        quality = quality.sort_values(["best_accuracy", "roc_auc_effective"], ascending=False).reset_index(drop=True)
+        quality = quality.sort_values(["best_balanced_accuracy", "roc_auc_effective", "best_accuracy"], ascending=False).reset_index(drop=True)
     result = {
         "rows": rows_df,
         "quality": quality,
@@ -1313,7 +1313,7 @@ def compute_or_load_covariance_threshold_sweep_focus(
             reg_parts.append(reg_df)
     classification = pd.concat(class_parts, ignore_index=True) if class_parts else pd.DataFrame()
     if not classification.empty:
-        classification = classification.sort_values(["best_accuracy", "roc_auc_effective"], ascending=False).reset_index(drop=True)
+        classification = classification.sort_values(["best_balanced_accuracy", "roc_auc_effective", "best_accuracy"], ascending=False).reset_index(drop=True)
     regression = pd.concat(reg_parts, ignore_index=True) if reg_parts else pd.DataFrame()
     if not regression.empty:
         regression = regression.sort_values(["main_score", "abs_spearman", "abs_pearson"], ascending=False).reset_index(drop=True)
@@ -1461,7 +1461,7 @@ def focus_quality_comparison_table(
 def plot_focus_quality_comparison_bars(
     comparison: pd.DataFrame,
     *,
-    score_col: str = "best_accuracy",
+    score_col: str = "best_balanced_accuracy",
     title: str | None = None,
     metrics: list[str] | tuple[str, ...] | None = None,
 ):
@@ -1550,7 +1550,7 @@ def plot_threshold_sweep_top_bars(
 def plot_covariance_split_quality_overview(
     quality: pd.DataFrame,
     *,
-    score_col: str = "best_accuracy",
+    score_col: str = "best_balanced_accuracy",
     top_n: int = 25,
     title: str | None = None,
 ):
@@ -1592,7 +1592,7 @@ def plot_best_covariance_split_metric_details(
     quality: pd.DataFrame,
     *,
     top_n: int = 6,
-    score_col: str = "best_accuracy",
+    score_col: str = "best_balanced_accuracy",
 ):
     from .plots import plot_metric_distribution_and_roc
 

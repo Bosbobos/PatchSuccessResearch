@@ -213,7 +213,7 @@ class PatchSuccessExperiment:
             "n_steps": int(self.config.n_steps),
             "alpha_batch_size": int(self.config.alpha_batch_size),
             "top_percent": float(top_percent),
-            "method_version": 6,
+            "method_version": 7,
         }
         key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
         return self.derived_cache_dir / f"success_failure_metrics_{key}.pkl"
@@ -234,7 +234,7 @@ class PatchSuccessExperiment:
             "n_steps": int(self.config.n_steps),
             "alpha_batch_size": int(self.config.alpha_batch_size),
             "top_percent": float(top_percent),
-            "method_version": 2,
+            "method_version": 3,
         }
         key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
         return self.derived_cache_dir / f"segmentig_success_failure_metrics_{key}.pkl"

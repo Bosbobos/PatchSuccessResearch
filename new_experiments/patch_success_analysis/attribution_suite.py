@@ -42,7 +42,7 @@ def _method_maps_cache_path(exp, example, *, layer_name: str) -> Path:
         "alpha_batch_size": int(exp.config.alpha_batch_size),
         "imgsz": int(exp.config.attack.imgsz),
         "methods": ["odam", "layercam", "full_layerig"],
-        "method_version": 1,
+        "method_version": 2,
     }
     out = exp.derived_cache_dir / "attribution_method_maps"
     out.mkdir(parents=True, exist_ok=True)
@@ -60,7 +60,7 @@ def _suite_cache_path(exp, examples, *, layer_name: str, top_percent: float) -> 
         "alpha_batch_size": int(exp.config.alpha_batch_size),
         "top_percent": float(top_percent),
         "methods": list(METHODS),
-        "method_version": 1,
+        "method_version": 2,
     }
     return exp.derived_cache_dir / f"attribution_method_suite_{_json_key(payload)}.pkl"
 
@@ -289,7 +289,7 @@ def compute_or_load_attribution_method_suite(
         metric_names = _method_metric_names(method, rows[0])
         quality = pd.DataFrame(metric_quality_rows(labels, {name: [row[name] for row in rows] for name in metric_names}))
         if not quality.empty:
-            quality = quality.sort_values(["best_accuracy", "roc_auc"], ascending=False).reset_index(drop=True)
+            quality = quality.sort_values(["best_balanced_accuracy", "roc_auc", "best_accuracy"], ascending=False).reset_index(drop=True)
             for item in quality.head(20).to_dict("records"):
                 name = item["metric"]
                 path = figure_dir / f"{method}_metric_{name}.png"
@@ -314,7 +314,7 @@ def compute_or_load_attribution_method_suite(
         "rows": rows,
         "quality_by_method": quality_by_method,
         "regression_by_method": regression_by_method,
-        "all_quality": all_quality.sort_values(["best_accuracy", "roc_auc"], ascending=False).reset_index(drop=True),
+        "all_quality": all_quality.sort_values(["best_balanced_accuracy", "roc_auc", "best_accuracy"], ascending=False).reset_index(drop=True),
         "all_regression": all_regression.sort_values(["main_score", "abs_spearman", "abs_pearson"], ascending=False).reset_index(drop=True),
         "skipped": skipped,
         "cache_path": str(cache_path),
@@ -334,13 +334,15 @@ def plot_method_classification_summary(all_quality: pd.DataFrame, *, top_n: int 
     fig, ax = plt.subplots(figsize=(14, 5.8), constrained_layout=True)
     labels = [f"{row.method}\n{row.metric}" for row in df.itertuples(index=False)]
     x = np.arange(len(df))
-    ax.bar(x - 0.18, df["best_accuracy"], width=0.36, label="best accuracy", color="#4C78A8")
+    score_col = "best_balanced_accuracy" if "best_balanced_accuracy" in df.columns else "best_accuracy"
+    score_label = "best balanced accuracy" if score_col == "best_balanced_accuracy" else "best accuracy"
+    ax.bar(x - 0.18, df[score_col], width=0.36, label=score_label, color="#4C78A8")
     ax.bar(x + 0.18, df["roc_auc"], width=0.36, label="ROC-AUC", color="#72B7B2")
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=50, ha="right", fontsize=8)
     ax.set_title("Overall best attribution-method metrics for success/fail classification")
     ax.set_ylabel("score")
-    ax.set_ylim(max(0.0, float(np.nanmin(df[["best_accuracy", "roc_auc"]].to_numpy())) - 0.05), 1.0)
+    ax.set_ylim(max(0.0, float(np.nanmin(df[[score_col, "roc_auc"]].to_numpy())) - 0.05), 1.0)
     ax.grid(axis="y", alpha=0.25)
     ax.legend()
     return fig
@@ -354,7 +356,7 @@ def plot_method_regression_summary(all_regression: pd.DataFrame, *, top_n: int =
     fig, ax = plt.subplots(figsize=(14, 5.8), constrained_layout=True)
     labels = [f"{row.method}\n{row.metric}" for row in df.itertuples(index=False)]
     x = np.arange(len(df))
-    ax.bar(x - 0.22, df["main_score"], width=0.22, label="main score", color="#4C78A8")
+    ax.bar(x - 0.22, df["main_score"], width=0.22, label="|Spearman| (main)", color="#4C78A8")
     ax.bar(x, df["abs_spearman"], width=0.22, label="|Spearman|", color="#F58518")
     ax.bar(x + 0.22, df["abs_pearson"], width=0.22, label="|Pearson|", color="#72B7B2")
     ax.set_xticks(x)

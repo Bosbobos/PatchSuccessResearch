@@ -103,7 +103,7 @@ def load_segmentig_success_failure_rows(
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
     sf = exp.run_segmentig_success_failure_metrics(force=force)
     rows_df = pd.DataFrame(sf["rows"])
-    quality_df = pd.DataFrame(sf["quality"]).sort_values(["best_accuracy", "roc_auc"], ascending=False)
+    quality_df = pd.DataFrame(sf["quality"]).sort_values(["best_balanced_accuracy", "roc_auc", "best_accuracy"], ascending=False)
     forbidden_metric_prefixes = ("full" + "_ig_", "n" + "aa_")
     forbidden_columns = [col for col in rows_df.columns if col.startswith(forbidden_metric_prefixes)]
     if forbidden_columns:

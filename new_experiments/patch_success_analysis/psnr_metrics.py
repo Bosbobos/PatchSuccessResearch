@@ -15,6 +15,21 @@ def _cache_key(payload: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()[:16]
 
 
+def _bar_label_fontsize(n_rows: int) -> float:
+    return max(6.0, min(9.0, 180.0 / max(1, int(n_rows))))
+
+
+def _quality_label(row, score_col: str) -> str:
+    score = row.get(score_col, np.nan)
+    if not np.isfinite(float(score)):
+        return ""
+    recall = row.get("balanced_recall", np.nan)
+    specificity = row.get("balanced_specificity", np.nan)
+    if np.isfinite(float(recall)) and np.isfinite(float(specificity)):
+        return f"{float(score):.3f} ({float(recall):.3f}/{float(specificity):.3f})"
+    return f"{float(score):.3f}"
+
+
 def _as_chw(values) -> np.ndarray:
     arr = np.asarray(values, dtype="float32")
     if arr.ndim == 4:
@@ -112,7 +127,7 @@ def _psnr_cache_path(
         "top_percent": float(top_percent),
         "max_value": float(max_value),
         "eps": float(eps),
-        "method_version": 2,
+        "method_version": 3,
     }
     return exp.derived_cache_dir / f"psnr_importance_top_metrics_{_cache_key(payload)}.pkl"
 
@@ -135,7 +150,7 @@ def _psnr_sweep_cache_path(
         "percentages": [float(v) for v in percentages],
         "max_value": float(max_value),
         "eps": float(eps),
-        "method_version": 2,
+        "method_version": 3,
     }
     return exp.derived_cache_dir / f"psnr_importance_percent_sweep_{_cache_key(payload)}.pkl"
 
@@ -284,7 +299,7 @@ def compute_or_load_psnr_importance_top_metrics(
     labels = rows_df["success"].astype(bool).to_numpy()
     quality = pd.DataFrame(_directional_metric_quality_rows(labels, {col: rows_df[col].to_numpy() for col in metric_cols}))
     quality["family"] = "psnr_top_importance"
-    quality = quality.sort_values(["best_accuracy", "roc_auc"], ascending=False).reset_index(drop=True)
+    quality = quality.sort_values(["best_balanced_accuracy", "roc_auc", "best_accuracy"], ascending=False).reset_index(drop=True)
     regression = regression_similarity_table(
         rows_df[["path", "success", "drop", *metric_cols]],
         target_col="drop",
@@ -402,7 +417,7 @@ def compute_or_load_psnr_importance_percent_sweep(
     quality["family"] = "psnr_percent_sweep"
     quality["top_percent"] = quality["metric"].map(_metric_top_percent)
     quality["aggregate"] = quality["metric"].map(_metric_aggregate)
-    quality = quality.sort_values(["best_accuracy", "roc_auc"], ascending=False).reset_index(drop=True)
+    quality = quality.sort_values(["best_balanced_accuracy", "roc_auc", "best_accuracy"], ascending=False).reset_index(drop=True)
 
     regression = regression_similarity_table(
         rows_df[["path", "success", "drop", *metric_cols]],
@@ -516,7 +531,7 @@ def plot_metric_roc(rows_df: pd.DataFrame, quality_df: pd.DataFrame, *, metric: 
     ax.plot(curve["fpr"], curve["tpr"], color="#4C78A8", lw=2)
     ax.plot([0, 1], [0, 1], color="black", lw=1, ls="--", alpha=0.55)
     ax.set_title(
-        f"{metric}\nROC-AUC={float(row['roc_auc']):.3f}, best acc={float(row['best_accuracy']):.3f}"
+        f"{metric}\nROC-AUC={float(row['roc_auc']):.3f}, best balanced acc={float(row.get('best_balanced_accuracy', row['best_accuracy'])):.3f}"
     )
     ax.set_xlabel("false positive rate")
     ax.set_ylabel("true positive rate")
@@ -545,8 +560,20 @@ def plot_comparison_bars(table: pd.DataFrame, *, score_col: str, title: str, top
     fig_h = max(5.0, 0.34 * len(sub) + 1.4)
     fig, ax = plt.subplots(figsize=(12, fig_h), constrained_layout=True)
     y = np.arange(len(sub))
-    ax.barh(y, sub[score_col].to_numpy(dtype="float64"), color=colors, alpha=0.88)
+    values = sub[score_col].to_numpy(dtype="float64")
+    ax.barh(y, values, color=colors, alpha=0.88)
     ax.set_yticks(y, labels.tolist())
+    if score_col == "best_balanced_accuracy":
+        value_labels = [_quality_label(row, score_col) for _, row in sub.iterrows()]
+        ax.set_xlim(0, 1.28)
+    else:
+        value_labels = [f"{value:.3f}" if np.isfinite(value) else "" for value in values]
+        if score_col in {"main_score", "abs_spearman"}:
+            ax.set_xlim(0, 1.12)
+    fontsize = _bar_label_fontsize(len(sub))
+    for yi, value, label in zip(y, values, value_labels):
+        if np.isfinite(value) and label:
+            ax.text(float(value) + 0.012, yi, label, va="center", ha="left", fontsize=fontsize, clip_on=False)
     ax.set_xlabel(score_col)
     ax.set_title(title)
     ax.grid(axis="x", alpha=0.25)
@@ -556,13 +583,10 @@ def plot_comparison_bars(table: pd.DataFrame, *, score_col: str, title: str, top
         if family in set(families)
     ]
     ax.legend(handles=handles, loc="lower right")
-    for yi, value in zip(y, sub[score_col].to_numpy(dtype="float64")):
-        if np.isfinite(value):
-            ax.text(value, yi, f" {value:.3f}", va="center", fontsize=9)
     return fig
 
 
-def plot_percent_sweep_accuracy(quality_df: pd.DataFrame, *, score_col: str = "best_accuracy"):
+def plot_percent_sweep_accuracy(quality_df: pd.DataFrame, *, score_col: str = "best_balanced_accuracy"):
     import matplotlib.pyplot as plt
 
     if quality_df.empty:
@@ -606,9 +630,10 @@ def plot_percent_sweep_accuracy(quality_df: pd.DataFrame, *, score_col: str = "b
             textcoords="offset points",
             fontsize=9,
         )
-    ax.set_title(f"PSNR-like metric: {score_col} vs top-importance percent")
+    score_label = "best balanced accuracy" if score_col == "best_balanced_accuracy" else score_col
+    ax.set_title(f"PSNR-like metric: {score_label} vs top-importance percent")
     ax.set_xlabel("top importance neurons, %")
-    ax.set_ylabel(score_col)
+    ax.set_ylabel(score_label)
     ax.grid(alpha=0.25)
     ax.legend()
     return fig

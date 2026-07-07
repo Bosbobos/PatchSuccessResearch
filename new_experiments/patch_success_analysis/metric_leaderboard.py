@@ -11,7 +11,15 @@ import pandas as pd
 
 
 CLASSIFICATION_SCORE_COLUMNS = {
+    "best_balanced_accuracy",
     "best_accuracy",
+    "balanced_precision",
+    "balanced_recall",
+    "balanced_specificity",
+    "balanced_f1",
+    "balanced_accuracy_plain",
+    "balanced_threshold",
+    "balanced_direction",
     "roc_auc",
     "raw_roc_auc",
     "roc_auc_effective",
@@ -53,10 +61,44 @@ META_COLUMNS = {
     "drop",
     "conf_clean",
     "conf_patch",
+    "clean_logit",
+    "patched_logit",
     "layer_maps_cache_path",
     "cov_cache_path",
     "method_maps_cache_path",
 }
+
+
+def _bar_label_fontsize(n_rows: int) -> float:
+    return max(6.0, min(9.0, 180.0 / max(1, int(n_rows))))
+
+
+def _quality_label(row, score_col: str) -> str:
+    score = row.get(score_col, np.nan)
+    if not np.isfinite(float(score)):
+        return ""
+    recall = row.get("balanced_recall", np.nan)
+    specificity = row.get("balanced_specificity", np.nan)
+    if np.isfinite(float(recall)) and np.isfinite(float(specificity)):
+        return f"{float(score):.3f} ({float(recall):.3f}/{float(specificity):.3f})"
+    return f"{float(score):.3f}"
+
+
+def _use_plain_accuracy_as_balanced_accuracy(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "best_accuracy" not in df.columns:
+        return df
+    out = df.copy()
+    accuracy = pd.to_numeric(out["best_accuracy"], errors="coerce")
+    out["best_balanced_accuracy"] = accuracy
+    if "balanced_accuracy_plain" in out.columns:
+        out["balanced_accuracy_plain"] = accuracy
+    return out
+
+
+def _annotate_barh(ax, y, values, labels, *, fontsize: float):
+    for yi, value, label in zip(y, values, labels):
+        if np.isfinite(float(value)) and label:
+            ax.text(float(value) + 0.012, yi, label, va="center", ha="left", fontsize=fontsize, clip_on=False)
 
 
 def _cache_key(payload: dict[str, Any]) -> str:
@@ -76,7 +118,7 @@ def _leaderboard_cache_path(exp, cache_files: list[Path]) -> Path:
             for path in cache_files
             if path.exists()
         ],
-        "method_version": 1,
+        "method_version": 3,
     }
     return exp.derived_cache_dir / f"metric_leaderboard_{_cache_key(payload)}.pkl"
 
@@ -243,13 +285,16 @@ def _numeric_metric_columns(rows_df: pd.DataFrame) -> list[str]:
     return cols
 
 
-def _quality_from_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
+def _quality_from_rows(rows_df: pd.DataFrame, *, metric_names: list[str] | None = None) -> pd.DataFrame:
     if rows_df.empty or "success" not in rows_df.columns:
         return pd.DataFrame()
     from .metrics import metric_quality_rows
 
-    metric_cols = _numeric_metric_columns(rows_df)
-    metric_cols = [col for col in metric_cols if col not in {"drop", "conf_clean", "conf_patch"}]
+    if metric_names is None:
+        metric_cols = _numeric_metric_columns(rows_df)
+        metric_cols = [col for col in metric_cols if col not in {"drop", "conf_clean", "conf_patch", "clean_logit", "patched_logit"}]
+    else:
+        metric_cols = [col for col in metric_names if col in rows_df.columns]
     if not metric_cols:
         return pd.DataFrame()
     labels = rows_df["success"].astype(bool).to_numpy()
@@ -279,6 +324,11 @@ def _extract_classification_tables(payload: dict[str, Any], path: Path) -> list[
     for key in ("quality", "all_quality", "classification"):
         if key in payload:
             tables.append((key, _as_dataframe(payload[key])))
+    metric_names: list[str] | None = None
+    for _, table in tables:
+        if not table.empty and "metric" in table.columns:
+            metric_names = table["metric"].astype(str).tolist()
+            break
 
     if "overall_val_df" in payload:
         table = _as_dataframe(payload["overall_val_df"]).rename(
@@ -296,10 +346,6 @@ def _extract_classification_tables(payload: dict[str, Any], path: Path) -> list[
         )
         tables.append(("bin_logreg_df", table))
 
-    if "rows_df" in payload:
-        quality = _quality_from_rows(_as_dataframe(payload["rows_df"]))
-        if not quality.empty:
-            tables.append(("rows_df_quality", quality))
     return [(name, table) for name, table in tables if not table.empty]
 
 
@@ -308,10 +354,11 @@ def _extract_regression_tables(payload: dict[str, Any]) -> list[tuple[str, pd.Da
     for key in ("regression", "all_regression", "similarity_df"):
         if key in payload:
             tables.append((key, _as_dataframe(payload[key])))
-    if "rows_df" in payload:
-        regression = _regression_from_rows(_as_dataframe(payload["rows_df"]))
-        if not regression.empty:
-            tables.append(("rows_df_regression", regression))
+    for rows_key in ("rows_df", "rows"):
+        if rows_key in payload:
+            regression = _regression_from_rows(_as_dataframe(payload[rows_key]))
+            if not regression.empty:
+                tables.append((f"{rows_key}_regression", regression))
     return [(name, table) for name, table in tables if not table.empty]
 
 
@@ -400,12 +447,17 @@ def compute_or_load_metric_leaderboard(exp, *, force: bool = False) -> dict[str,
 
     classification_all = pd.concat(classification_parts, ignore_index=True, sort=False) if classification_parts else pd.DataFrame()
     regression_all = pd.concat(regression_parts, ignore_index=True, sort=False) if regression_parts else pd.DataFrame()
-    classification = _deduplicate_leaderboard(classification_all, score_col="best_accuracy")
+    if not classification_all.empty and "best_balanced_accuracy" not in classification_all.columns:
+        classification_all["best_balanced_accuracy"] = np.nan
+    classification_all = _use_plain_accuracy_as_balanced_accuracy(classification_all)
+    if not regression_all.empty and "abs_spearman" in regression_all.columns:
+        regression_all["main_score"] = regression_all["abs_spearman"]
+    classification = _deduplicate_leaderboard(classification_all, score_col="best_balanced_accuracy")
     regression = _deduplicate_leaderboard(regression_all, score_col="main_score")
 
     result = {
-        "classification": classification.sort_values(["best_accuracy", "roc_auc"], ascending=False, na_position="last").reset_index(drop=True)
-        if not classification.empty and "best_accuracy" in classification.columns
+        "classification": classification.sort_values(["best_balanced_accuracy", "roc_auc", "best_accuracy"], ascending=False, na_position="last").reset_index(drop=True)
+        if not classification.empty and "best_balanced_accuracy" in classification.columns
         else classification,
         "regression": regression.sort_values(["main_score", "abs_spearman", "abs_pearson"], ascending=False, na_position="last").reset_index(drop=True)
         if not regression.empty and "main_score" in regression.columns
@@ -461,16 +513,22 @@ def plot_leaderboard_bars(
     fig_h = max(5.0, 0.34 * len(sub) + 1.4)
     fig, ax = plt.subplots(figsize=(13, fig_h), constrained_layout=True)
     y = np.arange(len(sub))
-    ax.barh(y, sub[score_col].to_numpy(dtype="float64"), color=colors, alpha=0.88)
+    values = sub[score_col].to_numpy(dtype="float64")
+    ax.barh(y, values, color=colors, alpha=0.88)
     ax.set_yticks(y, labels.tolist())
+    if score_col == "best_balanced_accuracy":
+        value_labels = [_quality_label(row, score_col) for _, row in sub.iterrows()]
+        ax.set_xlim(0, 1.28)
+    else:
+        value_labels = [f"{value:.3f}" if np.isfinite(value) else "" for value in values]
+        if score_col in {"main_score", "abs_spearman"}:
+            ax.set_xlim(0, 1.12)
+    _annotate_barh(ax, y, values, value_labels, fontsize=_bar_label_fontsize(len(sub)))
     ax.set_xlabel(score_col)
     ax.set_title(title or f"Metric leaderboard by {score_col}")
     ax.grid(axis="x", alpha=0.25)
     handles = [mpatches.Patch(color=color, label=family) for family, color in palette.items() if family in set(families)]
     ax.legend(handles=handles, loc="lower right")
-    for yi, value in zip(y, sub[score_col].to_numpy(dtype="float64")):
-        if np.isfinite(value):
-            ax.text(value, yi, f" {value:.3f}", va="center", fontsize=9)
     return fig
 
 
