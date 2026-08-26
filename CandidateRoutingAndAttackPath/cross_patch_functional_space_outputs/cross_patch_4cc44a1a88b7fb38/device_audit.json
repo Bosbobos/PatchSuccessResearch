@@ -1,0 +1,6 @@
+{
+  "requested_device": "cpu",
+  "mps_built": true,
+  "mps_available": false,
+  "model_parameter_device": "cpu"
+}

@@ -1,0 +1,73 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 7.705659866333008,
+  "teacher_cache_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/component_patch_outputs/teacher_cache/joint_component_1705b93e240225fa",
+  "fit_metadata": {
+    "known_support": {
+      "target_scale": 0.5240790843963623,
+      "training_coordinates": 2000,
+      "positive_coordinates": 2000
+    },
+    "blind_support": {
+      "target_scale": 0.18844851851463318,
+      "training_coordinates": 4096,
+      "positive_coordinates": 2048
+    }
+  },
+  "config": {
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/large_component_student_outputs",
+    "device": "cpu",
+    "require_device": false,
+    "train_examples": 4,
+    "test_examples": 2,
+    "teacher_path_steps": 1,
+    "feature_sets": [
+      "functional"
+    ],
+    "modes": [
+      "known_support",
+      "blind_support"
+    ],
+    "known_max_coordinates_per_image": 500,
+    "blind_candidates_per_level": 300,
+    "blind_apply_top_k": 300,
+    "blind_selector": "spatial",
+    "blind_top_clusters": 1,
+    "blind_person_top_k": 1000,
+    "blind_class_agnostic_top_k": 1000,
+    "blind_class_agnostic_per_level_k": 300,
+    "blind_cluster_candidate_limit": 2200,
+    "blind_cluster_min_score": 1e-08,
+    "blind_cluster_iou": 0.5,
+    "blind_max_cluster_members": 100,
+    "max_iter": 5,
+    "max_leaf_nodes": 31,
+    "learning_rate": 0.08,
+    "l2_regularization": 1.0,
+    "positive_weight": 12.0,
+    "correction_scales": [
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "diagnostic_ablations": true,
+    "target_iou": 0.5,
+    "detection_conf": 0.25,
+    "nms_conf": 0.01,
+    "nms_iou": 0.7,
+    "nms_max_det": 300,
+    "nms_max_time_img": 1.0,
+    "init_patch": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/data/patch.png",
+    "seed": 1201,
+    "method_version": 1
+  },
+  "train_endpoint_counts": {
+    "patched": 4
+  },
+  "test_endpoint_counts": {
+    "patched": 2,
+    "clean": 2
+  },
+  "train_test_scene_overlap": 0
+}

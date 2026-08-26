@@ -1,0 +1,39 @@
+{
+  "method_version": 1,
+  "metric_semantics": "image_level_max_person_confidence_drop",
+  "attenuation_event_rule": "conf_reference - conf_augmented >= 0.3",
+  "validity_rule": "reference person detection at inference conf >= 0.01",
+  "paired_design": true,
+  "stimuli_use_native_pixel_sizes": true,
+  "applied_stimulus_size": null,
+  "apply_stimulus_after_letterbox": true,
+  "reference_loaded_from_cache": false,
+  "config": {
+    "dataset_dir": "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/COCO_people_640x640_cropped",
+    "stimulus_paths": [
+      "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics/assets/texture_a.png",
+      "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics/assets/texture_b.png",
+      "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics/assets/texture_c.png",
+      "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics/assets/texture_d.png"
+    ],
+    "model_path": "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics/assets/perception_backbone.pt",
+    "output_root": "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics/representation_routing/multi_view_response_outputs",
+    "imgsz": 640,
+    "conf": 0.01,
+    "attenuation_event_drop": 0.3,
+    "stimulus_xy": [
+      0,
+      0
+    ],
+    "stimulus_size": null,
+    "batch_size": 128,
+    "device": "cuda:0",
+    "max_images": null
+  },
+  "dataset_images_total": 7343,
+  "reference_images_evaluated": 7343,
+  "reference_images_valid": 5702,
+  "details_rows": 22808,
+  "elapsed_seconds": 2470.058050058782,
+  "output_dir": "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics/representation_routing/multi_view_response_outputs/multi_view_response_3c5fdbe81c5b0cc8"
+}

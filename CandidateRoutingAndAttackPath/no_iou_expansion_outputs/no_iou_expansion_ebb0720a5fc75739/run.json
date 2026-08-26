@@ -1,0 +1,55 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 3967.9630241394043,
+  "config": {
+    "prior_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/leak_free_defense_outputs/leak_free_593effe4b13ad110",
+    "pool_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/max_balanced_pool_outputs/max_balanced_b597061f5a82eb58",
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/no_iou_expansion_outputs",
+    "device": "mps",
+    "require_device": true,
+    "student_feature_set": "functional",
+    "final_per_group": 100,
+    "final_groups": [
+      "hidden_low_conf_match",
+      "hidden_no_iou_match",
+      "visible_target_winner"
+    ],
+    "proposal_top_k": 3000,
+    "proposal_per_level_k": 900,
+    "proposal_candidate_limit": 6500,
+    "cluster_ious": [
+      0.3,
+      0.5,
+      0.7
+    ],
+    "max_hypotheses": 320,
+    "top_clusters": 5,
+    "candidate_budget": 8000,
+    "student_apply_top_k": 12000,
+    "pair_samples_per_scene": 600,
+    "pairwise_max_iter": 180,
+    "pairwise_max_leaf_nodes": 31,
+    "set_rank_weight": 0.65,
+    "seed": 2907,
+    "max_student_scenes": null,
+    "max_ranker_scenes": null,
+    "max_final_scenes": null,
+    "method_version": 1
+  },
+  "general_training_pairs": 208344,
+  "specialist_training_pairs": 50104,
+  "primary_condition": "expanded_specialist_setaware_top5_8k",
+  "audit": {
+    "student_train_scenes": 768,
+    "ranker_train_scenes": 200,
+    "previous_validation_scenes": 200,
+    "fresh_final_scenes": 300,
+    "train_final_path_overlap": 0,
+    "previous_validation_final_path_overlap": 0,
+    "final_teacher_records_loaded": false,
+    "final_teacher_values_used": false,
+    "final_target_boxes_used_for_metrics_only": true,
+    "inference_uses_analysis_group": false,
+    "primary_condition_locked_before_final": "expanded_specialist_setaware_top5_8k"
+  }
+}

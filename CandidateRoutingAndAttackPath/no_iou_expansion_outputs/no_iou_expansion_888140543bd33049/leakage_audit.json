@@ -1,0 +1,13 @@
+{
+  "student_train_scenes": 4,
+  "ranker_train_scenes": 8,
+  "previous_validation_scenes": 200,
+  "fresh_final_scenes": 3,
+  "train_final_path_overlap": 0,
+  "previous_validation_final_path_overlap": 0,
+  "final_teacher_records_loaded": false,
+  "final_teacher_values_used": false,
+  "final_target_boxes_used_for_metrics_only": true,
+  "inference_uses_analysis_group": false,
+  "primary_condition_locked_before_final": "expanded_specialist_setaware_top5_8k"
+}

@@ -1,0 +1,13 @@
+{
+  "mechanism_input": "one_image_only",
+  "patched_clean_pair_compared_by_mechanism": false,
+  "student_and_ranker_frozen": true,
+  "validation_scenes": 200,
+  "fresh_final_scenes": 300,
+  "known_prior_evaluation_paths_excluded": 1479,
+  "train_final_path_overlap": 0,
+  "validation_final_path_overlap": 0,
+  "final_teacher_records_loaded": false,
+  "final_target_boxes_used_for_metrics_only": true,
+  "condition_selected_before_final_evaluation": "level_2_only"
+}

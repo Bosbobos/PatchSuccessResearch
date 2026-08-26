@@ -1,0 +1,78 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 6.242253065109253,
+  "target_scale": 0.2199615240097046,
+  "feature_names": {
+    "activation": [
+      "z",
+      "level",
+      "channel",
+      "y",
+      "x"
+    ],
+    "local": [
+      "z",
+      "level",
+      "channel",
+      "y",
+      "x",
+      "local_mean_z",
+      "local_std_z",
+      "center_minus_local"
+    ],
+    "functional": [
+      "z",
+      "level",
+      "channel",
+      "y",
+      "x",
+      "gradient",
+      "z_gradient"
+    ],
+    "combined": [
+      "z",
+      "level",
+      "channel",
+      "y",
+      "x",
+      "local_mean_z",
+      "local_std_z",
+      "center_minus_local",
+      "gradient",
+      "z_gradient"
+    ]
+  },
+  "teacher_cache_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/component_patch_outputs/teacher_cache/joint_component_62e7fd29742d2837",
+  "config": {
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/component_student_outputs",
+    "device": "cpu",
+    "require_device": false,
+    "train_examples_per_group": 1,
+    "eval_examples_per_group": 1,
+    "teacher_path_steps": 3,
+    "feature_sets": [
+      "activation",
+      "local",
+      "functional",
+      "combined"
+    ],
+    "max_coordinates_per_image": 2000,
+    "max_iter": 20,
+    "max_leaf_nodes": 31,
+    "learning_rate": 0.08,
+    "l2_regularization": 1.0,
+    "clean_behavior": "zero",
+    "target_iou": 0.5,
+    "detection_conf": 0.25,
+    "nms_conf": 0.01,
+    "nms_iou": 0.7,
+    "nms_max_det": 300,
+    "nms_max_time_img": 1.0,
+    "smoothmax_temperature": 0.35,
+    "dynamic_iou_temperature": 0.07,
+    "dynamic_iou_weight": 4.0,
+    "init_patch": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/data/patch.png",
+    "seed": 811,
+    "method_version": 1
+  }
+}

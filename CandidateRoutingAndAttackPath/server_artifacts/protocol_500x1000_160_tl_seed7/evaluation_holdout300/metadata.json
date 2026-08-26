@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "paired_clean_reference": true,
+  "ground_truth_semantics": "clean detector detections are paired pseudo-targets",
+  "scene_disjoint": true,
+  "train_scenes": 500,
+  "eval_scenes": 300,
+  "scene_overlap": 0,
+  "patch_shapes_chw": {
+    "person_adv": [
+      3,
+      160,
+      160
+    ],
+    "general_adv": [
+      3,
+      160,
+      160
+    ],
+    "person_dpatch": [
+      3,
+      160,
+      160
+    ],
+    "general_dpatch": [
+      3,
+      160,
+      160
+    ]
+  },
+  "position_xy": [
+    0,
+    0
+  ],
+  "inference_conf": 0.01,
+  "detection_conf": 0.25,
+  "match_iou": 0.5,
+  "nms_iou": 0.7,
+  "suppression_drop": 0.3,
+  "duty_cycle": 0.2,
+  "elapsed_seconds": 627.0963817834854,
+  "metric_notes": {
+    "hidden": "no same-class patched detection with IoU>=match_iou and confidence>=detection_conf",
+    "geometry_shift": "best same-class candidate has confidence>=detection_conf but IoU<match_iou",
+    "introduced": "patched detection above detection_conf with no clean same-class IoU>=match_iou"
+  }
+}

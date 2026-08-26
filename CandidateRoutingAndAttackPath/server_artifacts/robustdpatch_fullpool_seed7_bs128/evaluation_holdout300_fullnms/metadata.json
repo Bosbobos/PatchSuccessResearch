@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "world_size": 4,
+  "paired_clean_reference": true,
+  "ground_truth_semantics": "clean detector detections are paired pseudo-targets",
+  "scene_disjoint": true,
+  "train_scenes": 500,
+  "eval_scenes": 300,
+  "scene_overlap": 0,
+  "surface_shape_chw": [
+    3,
+    160,
+    160
+  ],
+  "position_xy": [
+    0,
+    0
+  ],
+  "inference_conf": 0.01,
+  "detection_conf": 0.25,
+  "match_iou": 0.5,
+  "nms_iou": 0.7,
+  "nms_time_per_image": 1.0,
+  "suppression_drop": 0.3,
+  "elapsed_seconds": 57.316969491541386
+}

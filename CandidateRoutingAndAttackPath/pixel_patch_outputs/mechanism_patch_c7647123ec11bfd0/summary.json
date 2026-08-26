@@ -1,0 +1,41 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 157.29831910133362,
+  "cache_path": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/new_experiments/new_experiments/outputs/patch_success_analysis/cache/attack_pool_d60ec9ed15ee6591.pkl",
+  "train_examples": 64,
+  "eval_examples": 64,
+  "clean_visible_eval_examples": 63,
+  "baseline_hidden_eval_examples": 26,
+  "baseline_target_hiding_rate": 0.4126984126984127,
+  "hidden_eval_examples": 55,
+  "target_hiding_rate": 0.873015873015873,
+  "absolute_hiding_rate_gain": 0.46031746031746035,
+  "patch_path": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/pixel_patch_outputs/mechanism_patch_c7647123ec11bfd0/patch.png",
+  "config": {
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/pixel_patch_outputs",
+    "device": "cpu",
+    "require_device": false,
+    "patch_size": 160,
+    "patch_xy": [
+      0,
+      0
+    ],
+    "train_examples": 64,
+    "eval_examples": 64,
+    "epochs": 5,
+    "batch_size": 4,
+    "learning_rate": 0.08,
+    "smoothmax_temperature": 0.35,
+    "dynamic_iou_temperature": 0.07,
+    "dynamic_iou_weight": 4.0,
+    "match_iou": 0.5,
+    "detection_conf": 0.25,
+    "nms_conf": 0.01,
+    "nms_iou": 0.7,
+    "nms_max_det": 300,
+    "tv_weight": 0.002,
+    "init_patch": "data/patch.png",
+    "seed": 211,
+    "method_version": 2
+  }
+}

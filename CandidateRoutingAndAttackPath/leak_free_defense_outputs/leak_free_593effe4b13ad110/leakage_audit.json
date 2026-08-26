@@ -1,0 +1,11 @@
+{
+  "student_ranker_path_overlap": 0,
+  "student_holdout_path_overlap": 0,
+  "ranker_holdout_path_overlap": 0,
+  "holdout_teacher_records_loaded": false,
+  "holdout_teacher_values_used_for_correction": false,
+  "holdout_target_boxes_used_for_metrics_only": true,
+  "student_train_scenes": 768,
+  "ranker_train_scenes": 200,
+  "holdout_scenes": 200
+}

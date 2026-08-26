@@ -1,0 +1,39 @@
+{
+  "example_id": "2241a17c14b865cd",
+  "analysis_group": "hidden_low_conf_match",
+  "cache_path": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/new_experiments/new_experiments/outputs/patch_success_analysis/cache/attack_pool_d60ec9ed15ee6591.pkl",
+  "level_index": 2,
+  "level_name": "P5",
+  "n_candidates": 10,
+  "local_dimension": 27648,
+  "jacobian_shape": [
+    20,
+    27648
+  ],
+  "U_shape": [
+    20,
+    20
+  ],
+  "Sigma_shape": [
+    20,
+    20
+  ],
+  "Vt_shape": [
+    20,
+    27648
+  ],
+  "numerical_rank": 20,
+  "path_steps": 3,
+  "target_box": [
+    151.533447265625,
+    39.693115234375,
+    491.02789306640625,
+    594.144775390625
+  ],
+  "local_delta_energy": 11197.708747389726,
+  "functional_energy": 615.7960274034543,
+  "residual_energy": 10581.91271998613,
+  "functional_fraction_of_local": 0.05499303842377586,
+  "functional_fraction_of_full": 0.004875455664024105,
+  "linear_completeness_relative_error": 0.034629207979287924
+}

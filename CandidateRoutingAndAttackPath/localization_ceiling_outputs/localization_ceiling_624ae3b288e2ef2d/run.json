@@ -1,0 +1,22 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 126.46963906288147,
+  "base_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/large_component_student_outputs/large_student_b1ec65f6d9fcc5d5",
+  "n_test_scenes": 150,
+  "config": {
+    "base_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/large_component_student_outputs/large_student_b1ec65f6d9fcc5d5",
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/localization_ceiling_outputs",
+    "device": "mps",
+    "require_device": true,
+    "candidate_budget": 4000,
+    "averaged_hypotheses": 5,
+    "separate_hypotheses": [
+      5,
+      10
+    ],
+    "geometry_fraction": 0.3,
+    "condition_batch_size": 6,
+    "max_test_scenes": null,
+    "method_version": 1
+  }
+}

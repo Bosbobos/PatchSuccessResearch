@@ -1,0 +1,30 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 447.82944416999817,
+  "teacher_cache_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/component_patch_outputs/teacher_cache/joint_component_15427e54142f057e",
+  "balanced_selection_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/outputs/target_instance_all_metrics/balanced_target_selection_9ffddc8228673302",
+  "config": {
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/max_balanced_pool_outputs",
+    "device": "mps",
+    "require_device": true,
+    "student_per_group": 192,
+    "ranker_per_group": 50,
+    "holdout_per_group": 50,
+    "teacher_path_steps": 3,
+    "build_teacher_components": true,
+    "seed": 2203,
+    "method_version": 1
+  },
+  "audit": {
+    "balanced_per_group": 292,
+    "balanced_total": 1168,
+    "student_train_scenes": 768,
+    "ranker_train_scenes": 200,
+    "holdout_scenes": 200,
+    "teacher_scenes": 968,
+    "holdout_teacher_scenes": 0,
+    "student_ranker_path_overlap": 0,
+    "student_holdout_path_overlap": 0,
+    "ranker_holdout_path_overlap": 0
+  }
+}

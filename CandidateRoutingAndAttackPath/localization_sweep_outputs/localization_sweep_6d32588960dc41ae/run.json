@@ -1,0 +1,80 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 3.058824062347412,
+  "config": {
+    "base_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/large_component_student_outputs/large_student_b1ec65f6d9fcc5d5",
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/localization_sweep_outputs",
+    "device": "cpu",
+    "require_device": false,
+    "candidate_budgets": [
+      200,
+      400
+    ],
+    "blind_cluster_counts": [
+      1,
+      3
+    ],
+    "condition_batch_size": 4,
+    "max_test_scenes": 2,
+    "seed": 1201,
+    "method_version": 1
+  },
+  "base_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/large_component_student_outputs/large_student_b1ec65f6d9fcc5d5",
+  "n_test_scenes": 2,
+  "specs": [
+    {
+      "target_source": "blind",
+      "selector": "coordinate",
+      "candidate_budget": 200,
+      "cluster_count": 3
+    },
+    {
+      "target_source": "blind",
+      "selector": "coordinate",
+      "candidate_budget": 400,
+      "cluster_count": 3
+    },
+    {
+      "target_source": "blind",
+      "selector": "hybrid",
+      "candidate_budget": 200,
+      "cluster_count": 3
+    },
+    {
+      "target_source": "blind",
+      "selector": "hybrid",
+      "candidate_budget": 400,
+      "cluster_count": 3
+    },
+    {
+      "target_source": "blind",
+      "selector": "spatial",
+      "candidate_budget": 400,
+      "cluster_count": 3
+    },
+    {
+      "target_source": "blind",
+      "selector": "hybrid",
+      "candidate_budget": 400,
+      "cluster_count": 1
+    },
+    {
+      "target_source": "oracle_target",
+      "selector": "coordinate",
+      "candidate_budget": 400,
+      "cluster_count": 0
+    },
+    {
+      "target_source": "oracle_target",
+      "selector": "spatial",
+      "candidate_budget": 400,
+      "cluster_count": 0
+    },
+    {
+      "target_source": "oracle_target",
+      "selector": "hybrid",
+      "candidate_budget": 400,
+      "cluster_count": 0
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "requested_device": "mps",
+  "mps_built": true,
+  "mps_available": true,
+  "model_parameter_device": "mps:0"
+}

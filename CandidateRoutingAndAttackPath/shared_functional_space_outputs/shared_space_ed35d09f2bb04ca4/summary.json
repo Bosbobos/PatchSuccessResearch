@@ -1,0 +1,87 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 10.851725816726685,
+  "n_examples": 8,
+  "n_train": 4,
+  "n_test": 4,
+  "cache_path": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/new_experiments/new_experiments/outputs/patch_success_analysis/cache/attack_pool_d60ec9ed15ee6591.pkl",
+  "config": {
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/shared_functional_space_outputs",
+    "device": "cpu",
+    "require_device": false,
+    "examples_per_group": 2,
+    "train_fraction": 0.6,
+    "path_steps": 1,
+    "window_radius": 2,
+    "ranks": [
+      1,
+      2,
+      4
+    ],
+    "causal_ranks": [
+      1,
+      4
+    ],
+    "target_iou": 0.5,
+    "detection_conf": 0.25,
+    "candidate_min_score": 0.01,
+    "random_max_iou": 0.1,
+    "nms_conf": 0.01,
+    "nms_iou": 0.7,
+    "nms_max_det": 300,
+    "nms_max_time_img": 1.0,
+    "seed": 613,
+    "max_output_gb": 2.0,
+    "method_version": 9001
+  },
+  "pooled_rank_max_analytic": [
+    {
+      "family": "sensitivity",
+      "setting": "pooled_all",
+      "rank": 4,
+      "n_examples": 4,
+      "n_candidates": 40,
+      "mean_gradient_coverage": 0.5779299749944726,
+      "mean_delta_energy_fraction": 0.0031204213433154776,
+      "effect_r2_zero": 0.6409221290909934,
+      "effect_cosine": 0.9646293536689672
+    },
+    {
+      "family": "attack",
+      "setting": "pooled_all",
+      "rank": 4,
+      "n_examples": 4,
+      "n_candidates": 40,
+      "mean_gradient_coverage": 0.6231176241378849,
+      "mean_delta_energy_fraction": 0.004686121596252416,
+      "effect_r2_zero": 0.7490313891989722,
+      "effect_cosine": 0.9801582547640155
+    }
+  ],
+  "pooled_rank_max_causal": [
+    {
+      "family": "sensitivity",
+      "setting": "pooled_all",
+      "rank": 4,
+      "n_examples": 4,
+      "n_hidden_baseline": 2,
+      "target_hidden_rate": 0.25,
+      "recovery_rate": 0.5,
+      "clean_endpoint_damage_rate": 0.0,
+      "mean_pre_target_conf": 0.4830537047237158
+    },
+    {
+      "family": "attack",
+      "setting": "pooled_all",
+      "rank": 4,
+      "n_examples": 4,
+      "n_hidden_baseline": 2,
+      "target_hidden_rate": 0.25,
+      "recovery_rate": 0.5,
+      "clean_endpoint_damage_rate": 0.0,
+      "mean_pre_target_conf": 0.4901564782485366
+    }
+  ],
+  "interpretation_rule": "A shared space is supported only if pooled/cross-outcome holdout gradient coverage and causal recovery exceed the same-rank random basis while using a small delta-energy fraction.",
+  "scope": "One detector and one fixed adversarial patch; cross-patch and cross-model transfer must be tested only if the across-image holdout result is positive."
+}

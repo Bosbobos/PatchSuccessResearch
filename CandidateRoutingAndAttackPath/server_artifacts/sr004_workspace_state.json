@@ -1,0 +1,10 @@
+{
+  "workspace": "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics",
+  "dataset": "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/COCO_people_640x640_cropped",
+  "dataset_images": 7343,
+  "tests_passed": 51,
+  "tests_failed": 0,
+  "notebook": "representation_routing/multi_view_response.ipynb",
+  "model": "assets/perception_backbone.pt",
+  "gpu_compute_started": false
+}

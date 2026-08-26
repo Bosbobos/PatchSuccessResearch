@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "variant": "class_native",
+  "protocol": "ART AdversarialPatchPyTorch optimizer semantics with differentiable native YOLO losses",
+  "steps_are_minibatch_updates": true,
+  "train_images": 500,
+  "patch_size": [
+    160,
+    160
+  ],
+  "position_xy": [
+    0,
+    0
+  ],
+  "selected_losses": [
+    "loss_cls"
+  ],
+  "optimizer": "Adam",
+  "lr": 0.03,
+  "augmentations": [],
+  "regularizers": [],
+  "clean_pseudo_targets": "/workspace-SR004.nfs2/konovalov/orig_tactile/tactile/.cache/tactile_jepa_diagnostics/surface_reference_training/protocol_data/all_class_targets.json",
+  "last_metrics": {
+    "step": 1000,
+    "epoch": 32,
+    "attack_score": 192.28651428222656,
+    "loss_box": 6.076728820800781,
+    "loss_cls": 192.28651428222656,
+    "loss_dfl": 17.643953323364258,
+    "active_seconds": 0.20125383883714676
+  },
+  "wall_seconds": 1048.9815245941281
+}

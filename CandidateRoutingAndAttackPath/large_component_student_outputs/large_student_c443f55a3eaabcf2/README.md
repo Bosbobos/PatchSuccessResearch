@@ -1,0 +1,16 @@
+# Large component student run
+
+- train: 200 patched endpoints only
+- test: 150 patched + 150 clean endpoints
+- train/test underlying scenes are disjoint
+- blind_support receives no teacher coordinates, target box, class, or clean endpoint at inference
+
+mode,feature_set,patched_n,clean_n,baseline_target_rate,corrected_target_rate,hidden_n,hidden_recovered_n,baseline_lost_n,patched_conf_gain,clean_full_detection_f1,clean_target_change_rate,support_recall,support_energy_recall
+blind_support,activation,150,150,0.52,0.6333333333333333,72,18,1,0.06835642642031113,0.9902433862433863,0.0,0.08801446506364824,0.2535080903601127
+blind_support,combined,150,150,0.52,0.72,72,30,0,0.16564941385760903,0.9847484367484367,0.0,0.08801446506364824,0.2535080903601127
+blind_support,functional,150,150,0.52,0.7333333333333333,72,32,0,0.16755799192314347,0.98587012987013,0.0,0.08801446506364824,0.2535080903601127
+blind_support,local,150,150,0.52,0.6533333333333333,72,21,1,0.07102314682677388,0.9934179894179893,0.0,0.08801446506364824,0.2535080903601127
+known_support,activation,150,150,0.52,0.74,72,33,0,0.14105755411709348,0.9992380952380954,0.0,1.0,1.0
+known_support,combined,150,150,0.52,0.8266666666666667,72,46,0,0.3361386541215082,0.995467485919099,0.0,1.0,1.0
+known_support,functional,150,150,0.52,0.82,72,45,0,0.32916658562918505,0.995467485919099,0.0,1.0,1.0
+known_support,local,150,150,0.52,0.7466666666666667,72,34,0,0.1541359519213438,0.9992380952380954,0.0,1.0,1.0

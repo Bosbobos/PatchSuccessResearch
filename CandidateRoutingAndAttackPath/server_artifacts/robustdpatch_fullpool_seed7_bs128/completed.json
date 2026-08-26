@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "method": "distributed_full_pool_sign_alignment",
+  "world_size": 4,
+  "train_images": 500,
+  "global_batches": 4,
+  "batch_size": 128,
+  "iterations": 1000,
+  "image_size": 640,
+  "surface_size": 160,
+  "position_xy": [
+    0,
+    0
+  ],
+  "learning_rate": 0.05,
+  "brightness_range": [
+    0.7,
+    1.0
+  ],
+  "rotation_weights": [
+    1,
+    0,
+    0,
+    0
+  ],
+  "crop_range": [
+    0,
+    0
+  ],
+  "sample_size": 1,
+  "selected_losses": [
+    "loss_cls",
+    "loss_box",
+    "loss_dfl"
+  ],
+  "target_source": "dynamic_reference_predictions",
+  "target_confidence": 0.25,
+  "target_iou": 0.7,
+  "target_max_det": 300,
+  "duty_cycle": 1.0,
+  "seed": 7,
+  "weights": "tactile_jepa_diagnostics/assets/perception_backbone.pt",
+  "train_root": "tactile_jepa_diagnostics/surface_reference_training/protocol_data/train",
+  "wall_seconds": 4641.3694662973285,
+  "last_metrics": {
+    "iteration": 1000,
+    "loss_box_sum": 170.04574584960938,
+    "loss_cls_sum": 5255.796875,
+    "loss_dfl_sum": 522.904541015625,
+    "target_count": 1850,
+    "active_seconds": 4.749135352671146,
+    "elapsed_seconds": 4641.323788054287,
+    "eta_seconds": 0.0
+  }
+}

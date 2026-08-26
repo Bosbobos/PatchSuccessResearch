@@ -1,0 +1,103 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 9.699274063110352,
+  "n_examples": 8,
+  "n_train_source_patch": 4,
+  "n_test_target_patch": 4,
+  "source_patch": {
+    "path": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/data/patch.png",
+    "sha256": "1de5310bd35a010acaeeb666bbf027363b31dc335bf2026a4fd6972ed40f0f2a",
+    "role": "basis training on train images"
+  },
+  "target_patch": {
+    "path": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/server_artifacts/protocol_500x1000_160_tl_seed7/final_surfaces/general_adv.png",
+    "sha256": "bc651223f58d89dc40c3e880a10b02d3a06d9ae062cfb6accda0796cd30c6ee7",
+    "role": "unseen-patch evaluation on holdout images"
+  },
+  "cache_path": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/new_experiments/new_experiments/outputs/patch_success_analysis/cache/attack_pool_d60ec9ed15ee6591.pkl",
+  "device_audit": {
+    "requested_device": "cpu",
+    "mps_built": true,
+    "mps_available": false,
+    "model_parameter_device": "cpu"
+  },
+  "config": {
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/cross_patch_functional_space_outputs",
+    "device": "cpu",
+    "require_device": false,
+    "examples_per_group": 2,
+    "train_fraction": 0.6,
+    "path_steps": 1,
+    "window_radius": 2,
+    "ranks": [
+      1,
+      2,
+      4
+    ],
+    "causal_ranks": [
+      1,
+      4
+    ],
+    "target_iou": 0.5,
+    "detection_conf": 0.25,
+    "candidate_min_score": 0.01,
+    "random_max_iou": 0.1,
+    "nms_conf": 0.01,
+    "nms_iou": 0.7,
+    "nms_max_det": 300,
+    "nms_max_time_img": 1.0,
+    "seed": 613,
+    "max_output_gb": 2.0,
+    "method_version": 9001
+  },
+  "target_patch_baseline_hidden": 4,
+  "target_patch_baseline_hidden_rate": 1.0,
+  "source_attack_basis_rank_max": {
+    "family": "attack",
+    "setting": "pooled_all",
+    "rank": 4,
+    "n_examples": 4,
+    "n_hidden_baseline": 4,
+    "target_hidden_rate": 1.0,
+    "recovery_rate": 0.0,
+    "clean_endpoint_damage_rate": NaN,
+    "mean_pre_target_conf": 0.03635056898929179
+  },
+  "source_sensitivity_basis_rank_max": {
+    "family": "sensitivity",
+    "setting": "pooled_all",
+    "rank": 4,
+    "n_examples": 4,
+    "n_hidden_baseline": 4,
+    "target_hidden_rate": 1.0,
+    "recovery_rate": 0.0,
+    "clean_endpoint_damage_rate": NaN,
+    "mean_pre_target_conf": 0.018213435309007764
+  },
+  "pooled_rank_max_analytic": [
+    {
+      "family": "sensitivity",
+      "setting": "pooled_all",
+      "rank": 4,
+      "n_examples": 4,
+      "n_candidates": 40,
+      "mean_gradient_coverage": 0.46447679505647776,
+      "mean_delta_energy_fraction": 0.0023391057980854182,
+      "effect_r2_zero": 0.4826020627662252,
+      "effect_cosine": 0.7990387764185198
+    },
+    {
+      "family": "attack",
+      "setting": "pooled_all",
+      "rank": 4,
+      "n_examples": 4,
+      "n_candidates": 40,
+      "mean_gradient_coverage": 0.4848931297358902,
+      "mean_delta_energy_fraction": 0.0037559231197178628,
+      "effect_r2_zero": 0.6791060805450468,
+      "effect_cosine": 0.8852648554177507
+    }
+  ],
+  "validity_rule": "Cross-patch transfer is supported when a basis fitted only with the source patch captures target-patch holdout Jacobians/effects and causally repairs target-patch hidden endpoints above the same-rank random basis.",
+  "important_scope": "The source and target surfaces share the 160x160 top-left protocol and detector. This tests cross-patch, not cross-model or cross-position transfer."
+}

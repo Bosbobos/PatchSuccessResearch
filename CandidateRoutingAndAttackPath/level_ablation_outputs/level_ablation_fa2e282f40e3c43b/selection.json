@@ -1,0 +1,40 @@
+{
+  "rule": "no more visible losses or clean target changes than all-levels; clean F1 no more than 0.005 below all-levels; no-IoU recovery no more than one below all-levels; maximize total hidden recovery, then use fewer active levels; prefer level 2 over diagnostic level 1 on an exact tie",
+  "selected": {
+    "condition": "level_2_only",
+    "hidden_recovered_n": 0,
+    "no_iou_recovered_n": 0,
+    "active_level_count": 1,
+    "clean_full_detection_f1": 1.0
+  },
+  "eligible": [
+    {
+      "condition": "all_levels",
+      "hidden_recovered_n": 0,
+      "no_iou_recovered_n": 0,
+      "active_level_count": 3,
+      "clean_full_detection_f1": 1.0
+    },
+    {
+      "condition": "level_1_only",
+      "hidden_recovered_n": 0,
+      "no_iou_recovered_n": 0,
+      "active_level_count": 1,
+      "clean_full_detection_f1": 1.0
+    },
+    {
+      "condition": "level_2_only",
+      "hidden_recovered_n": 0,
+      "no_iou_recovered_n": 0,
+      "active_level_count": 1,
+      "clean_full_detection_f1": 1.0
+    },
+    {
+      "condition": "levels_1_2",
+      "hidden_recovered_n": 0,
+      "no_iou_recovered_n": 0,
+      "active_level_count": 2,
+      "clean_full_detection_f1": 1.0
+    }
+  ]
+}

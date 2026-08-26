@@ -1,0 +1,12 @@
+{
+  "balanced_per_group": 292,
+  "balanced_total": 1168,
+  "student_train_scenes": 768,
+  "ranker_train_scenes": 200,
+  "holdout_scenes": 200,
+  "teacher_scenes": 968,
+  "holdout_teacher_scenes": 0,
+  "student_ranker_path_overlap": 0,
+  "student_holdout_path_overlap": 0,
+  "ranker_holdout_path_overlap": 0
+}

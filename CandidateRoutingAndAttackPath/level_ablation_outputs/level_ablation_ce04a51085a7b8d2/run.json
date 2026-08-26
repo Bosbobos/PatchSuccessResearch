@@ -1,0 +1,97 @@
+{
+  "status": "complete",
+  "elapsed_seconds": 33.03766703605652,
+  "config": {
+    "prior_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/leak_free_defense_outputs/leak_free_593effe4b13ad110",
+    "pool_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/max_balanced_pool_outputs/max_balanced_b597061f5a82eb58",
+    "state_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/no_iou_expansion_outputs/no_iou_expansion_ebb0720a5fc75739",
+    "eda_run": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/student_feature_eda_outputs/student_feature_eda_dfeaa6a5ea2cc46c",
+    "output_dir": "/Users/ashentide/PycharmProjects/PatchSuccessResearch/CandidateRoutingAndAttackPath/level_ablation_outputs",
+    "device": "cpu",
+    "require_device": false,
+    "student_feature_set": "functional",
+    "top_clusters": 5,
+    "candidate_budget": 300,
+    "student_apply_top_k": 450,
+    "final_per_group": 100,
+    "final_groups": [
+      "hidden_low_conf_match",
+      "hidden_no_iou_match",
+      "visible_target_winner"
+    ],
+    "max_validation_scenes": 8,
+    "max_final_scenes": 6,
+    "seed": 3301,
+    "method_version": 1
+  },
+  "level_conditions": {
+    "all_levels": [
+      0,
+      1,
+      2
+    ],
+    "levels_1_2": [
+      1,
+      2
+    ],
+    "level_2_only": [
+      2
+    ],
+    "level_1_only": [
+      1
+    ]
+  },
+  "selection": {
+    "rule": "no more visible losses or clean target changes than all-levels; clean F1 no more than 0.005 below all-levels; no-IoU recovery no more than one below all-levels; maximize total hidden recovery, then use fewer active levels",
+    "selected": {
+      "condition": "level_1_only",
+      "hidden_recovered_n": 0,
+      "no_iou_recovered_n": 0,
+      "active_level_count": 1,
+      "clean_full_detection_f1": 1.0
+    },
+    "eligible": [
+      {
+        "condition": "all_levels",
+        "hidden_recovered_n": 0,
+        "no_iou_recovered_n": 0,
+        "active_level_count": 3,
+        "clean_full_detection_f1": 1.0
+      },
+      {
+        "condition": "level_1_only",
+        "hidden_recovered_n": 0,
+        "no_iou_recovered_n": 0,
+        "active_level_count": 1,
+        "clean_full_detection_f1": 1.0
+      },
+      {
+        "condition": "level_2_only",
+        "hidden_recovered_n": 0,
+        "no_iou_recovered_n": 0,
+        "active_level_count": 1,
+        "clean_full_detection_f1": 1.0
+      },
+      {
+        "condition": "levels_1_2",
+        "hidden_recovered_n": 0,
+        "no_iou_recovered_n": 0,
+        "active_level_count": 2,
+        "clean_full_detection_f1": 1.0
+      }
+    ]
+  },
+  "audit": {
+    "mechanism_input": "one_image_only",
+    "patched_clean_pair_compared_by_mechanism": false,
+    "student_and_ranker_frozen": true,
+    "validation_scenes": 8,
+    "fresh_final_scenes": 6,
+    "known_prior_evaluation_paths_excluded": 674,
+    "train_final_path_overlap": 1,
+    "validation_final_path_overlap": 0,
+    "final_teacher_records_loaded": false,
+    "final_target_boxes_used_for_metrics_only": true,
+    "condition_selected_before_final_evaluation": "level_1_only"
+  }
+}
